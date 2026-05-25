@@ -4,7 +4,6 @@ require('dotenv').config();
 const ITOP_URL = process.env.ITOP_URL;
 const ITOP_USER = process.env.ITOP_USER;
 const ITOP_TOKEN = process.env.ITOP_TOKEN;
-const ITOP_ORG = process.env.ITOP_ORG;
 
 const axiosConfig = {
   headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -18,7 +17,7 @@ const axiosConfig = {
 async function itopRequest(operation, params) {
   const url = `${ITOP_URL}/webservices/rest.php?version=1.3`;
   const payload = {
-    auth_user: ITOP_USER,
+    ...(ITOP_USER ? { auth_user: ITOP_USER } : {}),
     auth_token: ITOP_TOKEN,
     json_data: JSON.stringify({ operation, ...params }),
   };
