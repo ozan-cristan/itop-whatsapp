@@ -74,33 +74,13 @@ async function findPersonByMobile(rawNumber) {
 }
 
 /**
- * Busca una Person por CUIL (employee_number).
+ * Busca una Person por CUIT (campo cuit en iTop).
  * Retorna { id, friendlyname, org_id, org_name } o null.
  */
-async function findPersonByCuil(cuil) {
+async function findPersonByCuil(cuit) {
   const result = await itopRequest('core/get', {
     class: 'Person',
-    key: `SELECT Person WHERE employee_number = '${cuil}'`,
-    output_fields: 'id,friendlyname,org_id,org_name',
-  });
-
-  const objects = result.objects;
-  if (objects && Object.keys(objects).length > 0) {
-    const person = Object.values(objects)[0].fields;
-    person.id = Object.values(objects)[0].key;
-    return person;
-  }
-  return null;
-}
-
-/**
- * Busca una Person por CUIL (campo cuil en iTop).
- * Retorna { id, friendlyname, org_id, org_name } o null.
- */
-async function findPersonByCuil(cuil) {
-  const result = await itopRequest('core/get', {
-    class: 'Person',
-    key: `SELECT Person WHERE cuil = '${cuil}'`,
+    key: `SELECT Person WHERE cuit = '${cuit}'`,
     output_fields: 'id,friendlyname,org_id,org_name',
   });
 
