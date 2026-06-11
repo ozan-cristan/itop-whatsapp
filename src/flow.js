@@ -10,12 +10,53 @@ const {
 
 const TRIGGER_WORDS = ['hola', 'inicio', 'ticket', 'ayuda', 'help', 'start'];
 
-const BTN_CANCEL = { id: 'cancelar', label: '❌ Cancelar' };
-const BTN_CONFIRM = { id: '1', label: '✅ Confirmar' };
-const BTN_MODIFY  = { id: '2', label: '✏️ Modificar' };
+// ─── Constructores de respuesta ───────────────────────────────────────────────
 
 function withButtons(text, buttons) { return { text, buttons }; }
-function withCancel(text) { return withButtons(text, [BTN_CANCEL]); }
+
+function withList(text, rows, buttonLabel = 'Ver opciones') {
+  return { text, list: { button: buttonLabel, rows } };
+}
+
+function withCancel(text) {
+  return withButtons(text, [BTN_CANCEL]);
+}
+
+// ─── Constantes de botones ────────────────────────────────────────────────────
+
+const BTN_CANCEL  = { id: 'cancelar',  label: '❌ Cancelar' };
+const BTN_CONFIRM = { id: '1',         label: '✅ Confirmar' };
+const BTN_MODIFY  = { id: '2',         label: '✏️ Modificar' };
+const CANCEL_ROW  = { id: 'cancelar',  title: '❌ Volver al menú' };
+
+// ─── Menú principal como lista interactiva ────────────────────────────────────
+
+function mainMenuList(promptText) {
+  return withList(promptText, [
+    { id: '1', title: '📝 Nueva solicitud' },
+    { id: '2', title: '📋 Activas' },
+    { id: '3', title: '📁 Resueltas' },
+    { id: '4', title: '👋 Salir' },
+  ]);
+}
+
+// ─── Helpers de selección ─────────────────────────────────────────────────────
+
+// Interpreta IDs de lista (sel_0, sel_1…) o texto numérico (1, 2…)
+function parseSelectionIndex(input) {
+  if (input.startsWith('sel_')) return parseInt(input.slice(4), 10);
+  const n = parseInt(input, 10);
+  return isNaN(n) ? -1 : n - 1;
+}
+
+// Interpreta IDs de opciones de campo (opt_0, opt_1…) o texto numérico
+function parseOptIndex(input) {
+  if (input.startsWith('opt_')) return parseInt(input.slice(4), 10);
+  const n = parseInt(input, 10);
+  return isNaN(n) ? -1 : n - 1;
+}
+
+// ─── Labels de estado ─────────────────────────────────────────────────────────
 
 const STATUS_LABELS = {
   new: 'Nuevo',
@@ -45,44 +86,41 @@ const STATUS_EMOJI = {
   frozen: '❄️',
 };
 
-const MENU_OPTIONS = '1. Nueva solicitud\n2. Consultar solicitudes activas\n3. Consultar solicitudes resueltas\n4. Salir';
+// ─── Mensajes ─────────────────────────────────────────────────────────────────
 
 const MSG = {
-  ASK_PHONE: '👋 ¡Bienvenido! Para identificarte, ingresá tu *CUIT* (sin guiones ni espacios):',
-  SESSION_EXPIRED: '⏱️ Tu sesión expiró por inactividad. Ingresá tu *CUIT* para identificarte nuevamente:',
-  PHONE_NOT_FOUND: '❌ No encontramos ese CUIT en el sistema. Verificá e ingresalo de nuevo:',
-  PHONE_ERROR: '⚠️ No pudimos conectar con el sistema en este momento. Intentá de nuevo:',
+  ASK_PHONE:      '👋 ¡Bienvenido! Para identificarte, ingresá tu *CUIT* (sin guiones ni espacios):',
+  SESSION_EXPIRED:'⏱️ Tu sesión expiró por inactividad. Ingresá tu *CUIT* para identificarte nuevamente:',
+  PHONE_NOT_FOUND:'❌ No encontramos ese CUIT en el sistema. Verificá e ingresalo de nuevo:',
+  PHONE_ERROR:    '⚠️ No pudimos conectar con el sistema en este momento. Intentá de nuevo:',
 
-  WELCOME: (name) => `👋 Hola *${name}*. ¿Qué querés hacer?\n\n${MENU_OPTIONS}`,
-  CANCEL_MSG: (name) => `↩️ Operación cancelada. ¿Qué querés hacer, *${name}*?\n\n${MENU_OPTIONS}`,
-  FAREWELL: (name) => `👋 ¡Hasta luego, *${name}*! Si necesitás algo más, escribí *hola* para comenzar de nuevo.`,
-  INVALID_MENU: `⚠️ Respondé con una de las opciones:\n\n${MENU_OPTIONS}`,
+  WELCOME:    (name) => mainMenuList(`👋 Hola *${name}*. ¿Qué querés hacer?`),
+  CANCEL_MSG: (name) => mainMenuList(`↩️ Operación cancelada. ¿Qué querés hacer, *${name}*?`),
+  FAREWELL:   (name) => `👋 ¡Hasta luego, *${name}*! Si necesitás algo más, escribí *hola* para comenzar de nuevo.`,
+  INVALID_MENU: ()  => mainMenuList('⚠️ Opción inválida. ¿Qué querés hacer?'),
 
-  NO_FAMILIES: '⚠️ No hay familias de servicios disponibles para tu organización. Contactá a soporte.',
-  NO_SERVICES: '⚠️ No hay servicios disponibles para esa familia. Contactá a soporte.',
-  NO_TICKETS: '📭 No tenés solicitudes activas en el sistema.',
+  NO_FAMILIES:         '⚠️ No hay familias de servicios disponibles para tu organización. Contactá a soporte.',
+  NO_SERVICES:         '⚠️ No hay servicios disponibles para esa familia. Contactá a soporte.',
+  NO_TICKETS:          '📭 No tenés solicitudes activas en el sistema.',
   NO_RESOLVED_TICKETS: '📭 No tenés solicitudes resueltas en el sistema.',
 
-  ASK_FAMILY: (families) => {
-    const lista = families.map((f, i) => `${i + 1}. ${f.name}`).join('\n');
-    return `🗂️ Seleccioná la *familia de servicios*:\n\n${lista}\n\n_Escribí *cancelar* para volver al menú._`;
-  },
-  INVALID_FAMILY: (total) => `⚠️ Respondé con un número entre *1* y *${total}*.`,
+  ASK_FAMILY: (families) => withList(
+    '🗂️ Seleccioná la *familia de servicios*:',
+    [...families.map((f, i) => ({ id: `sel_${i}`, title: f.name.slice(0, 24) })), CANCEL_ROW]
+  ),
 
-  ASK_SERVICE: (services) => {
-    const lista = services.map((s, i) => `${i + 1}. ${s.name}`).join('\n');
-    return `📋 Seleccioná el *servicio*:\n\n${lista}\n\n_Escribí *cancelar* para volver al menú._`;
-  },
-  INVALID_SERVICE: (total) => `⚠️ Respondé con un número entre *1* y *${total}*.`,
+  ASK_SERVICE: (services) => withList(
+    '📋 Seleccioná el *servicio*:',
+    [...services.map((s, i) => ({ id: `sel_${i}`, title: s.name.slice(0, 24) })), CANCEL_ROW]
+  ),
 
-  ASK_SUBCAT: (subcats) => {
-    const lista = subcats.map((s, i) => `${i + 1}. ${s.name}`).join('\n');
-    return `📂 Seleccioná la subcategoría:\n\n${lista}\n\n_Escribí *cancelar* para volver al menú._`;
-  },
-  INVALID_SUBCAT: (total) => `⚠️ Respondé con un número entre *1* y *${total}*.`,
+  ASK_SUBCAT: (subcats) => withList(
+    '📂 Seleccioná la subcategoría:',
+    [...subcats.map((s, i) => ({ id: `sel_${i}`, title: s.name.slice(0, 24) })), CANCEL_ROW]
+  ),
 
   ASK_TITLE: '📝 *Paso 1 de 2* — Ingresá el *título* del reporte:\n\n_Escribí *cancelar* para volver al menú._',
-  ASK_DESC: '📄 *Paso 2 de 2* — Ingresá la *descripción* del problema:\n\n_Escribí *cancelar* para volver al menú._',
+  ASK_DESC:  '📄 *Paso 2 de 2* — Ingresá la *descripción* del problema:\n\n_Escribí *cancelar* para volver al menú._',
 
   CONFIRM_TICKET: (serviceName, subcatName, title, desc, templateFields, templateValues) => {
     let msg = `📋 *Resumen de tu solicitud*\n\n`;
@@ -100,29 +138,37 @@ const MSG = {
     }
     msg += `📝 Título: ${title}\n`;
     msg += `📄 Descripción: ${desc}\n\n`;
-    msg += `¿Confirmás la creación?\n\n1. Sí, crear ticket\n2. No, modificar datos`;
+    msg += `¿Confirmás la creación?`;
     return msg;
   },
   INVALID_CONFIRM: '⚠️ Respondé *1* para confirmar o *2* para modificar datos.',
 
-  ASK_ATTACHMENT: (ref) =>
-    `✅ Ticket *${ref}* creado.\n\n📎 ¿Querés adjuntar un archivo? Envialo ahora o respondé *no* para terminar.`,
-  ASK_ANOTHER_ATTACHMENT: (ref) =>
-    `✅ Archivo adjuntado. ¿Querés adjuntar otro al ticket *${ref}*? Envialo o respondé *no* para terminar.`,
+  ASK_ATTACHMENT: (ref) => withButtons(
+    `✅ Ticket *${ref}* creado.\n\n📎 Enviá un archivo para adjuntar, o tocá el botón para continuar sin adjunto.`,
+    [{ id: 'no', label: '✔️ Sin adjunto' }]
+  ),
+  ASK_ANOTHER_ATTACHMENT: (ref) => withButtons(
+    `✅ Archivo adjuntado al ticket *${ref}*. ¿Querés adjuntar otro?`,
+    [{ id: 'no', label: '✔️ Terminar' }]
+  ),
   TICKET_DONE: (ref) =>
-    `✅ Ticket *${ref}* listo. Un agente se pondrá en contacto a la brevedad.\n\n¿Qué querés hacer ahora?\n\n${MENU_OPTIONS}`,
+    mainMenuList(`✅ Ticket *${ref}* listo. Un agente se pondrá en contacto a la brevedad.\n\n¿Qué querés hacer ahora?`),
   ATTACHMENT_ERROR: (ref) =>
-    `⚠️ No se pudo adjuntar el archivo, pero el ticket *${ref}* fue creado.\n\n¿Qué querés hacer ahora?\n\n${MENU_OPTIONS}`,
+    mainMenuList(`⚠️ No se pudo adjuntar el archivo, pero el ticket *${ref}* fue creado.\n\n¿Qué querés hacer ahora?`),
 
   SHOW_TICKETS: (tickets, resolved = false) => {
-    const label = resolved ? 'Solicitudes resueltas' : 'Solicitudes activas';
-    const lista = tickets.map((t, i) => {
+    const label = resolved ? '📁 Tus solicitudes resueltas:' : '📋 Tus solicitudes activas:';
+    const rows = tickets.map((t, i) => {
       const emoji = STATUS_EMOJI[t.status] || '⚪';
-      return `${i + 1}. ${emoji} *${t.ref}* — ${t.title}`;
-    }).join('\n');
-    return `📋 ${label}:\n\n${lista}\n\nRespondé con el número para ver el detalle.\n_Escribí *cancelar* para volver al menú._`;
+      return {
+        id: `sel_${i}`,
+        title: `${emoji} ${t.ref}`.slice(0, 24),
+        description: t.title.slice(0, 72),
+      };
+    });
+    rows.push(CANCEL_ROW);
+    return withList(label, rows, 'Seleccionar');
   },
-  INVALID_TICKET: (total) => `⚠️ Respondé con un número entre *1* y *${total}*.`,
 
   TICKET_DETAIL: (d) => {
     const status = STATUS_LABELS[d.status] || d.status;
@@ -132,31 +178,33 @@ const MSG = {
       const text = d.lastLogMessage.replace(/<[^>]+>/g, '').trim();
       msg += `\n\n📝 Última nota pública (${d.lastLogDate}):\n${text}`;
     }
-    msg += '\n\n¿Qué querés hacer?\n\n1. Nueva solicitud\n2. Consultar otra solicitud\n3. Agregar comentario a este ticket';
-    return msg;
+    return withButtons(msg + '\n\n¿Qué querés hacer?', [
+      { id: '1', label: '📝 Nueva solicitud' },
+      { id: '2', label: '🔍 Ver otra' },
+      { id: '3', label: '💬 Comentar' },
+    ]);
   },
-  TICKET_DETAIL_INVALID: '⚠️ Respondé *1*, *2* o *3*.',
+  TICKET_DETAIL_INVALID: '⚠️ Tocá una de las opciones o respondé *1*, *2* o *3*.',
 
   ASK_COMMENT: '💬 Ingresá el comentario que querés agregar al ticket:\n\n_Escribí *cancelar* para volver al menú._',
   COMMENT_ADDED: (ref) =>
-    `✅ Comentario agregado al ticket *${ref}*.\n\n¿Qué querés hacer ahora?\n\n${MENU_OPTIONS}`,
+    mainMenuList(`✅ Comentario agregado al ticket *${ref}*.\n\n¿Qué querés hacer ahora?`),
   COMMENT_ERROR: '⚠️ No se pudo agregar el comentario. Intentá nuevamente.',
 
   ERROR: '⚠️ Ocurrió un error al procesar tu solicitud. Intentá nuevamente.',
 };
 
-// ─── Helpers para plantillas ───────────────────────────────────────────────
+// ─── Helpers para plantillas ───────────────────────────────────────────────────
 
 function evaluateDisplayCondition(condition, values) {
   if (!condition) return true;
-  const eqMatch = condition.match(/:template->(\w+)\s*=\s*'([^']*)'/);
+  const eqMatch  = condition.match(/:template->(\w+)\s*=\s*'([^']*)'/);
   const neqMatch = condition.match(/:template->(\w+)\s*!=\s*'([^']*)'/);
-  if (eqMatch) return (values[eqMatch[1]] || '') === eqMatch[2];
+  if (eqMatch)  return (values[eqMatch[1]]  || '') === eqMatch[2];
   if (neqMatch) return (values[neqMatch[1]] || '') !== neqMatch[2];
   return true;
 }
 
-// Devuelve el índice del próximo campo que necesita input del usuario
 function findNextFieldIndex(fields, startIndex, values) {
   for (let i = startIndex; i < fields.length; i++) {
     const f = fields[i];
@@ -167,7 +215,6 @@ function findNextFieldIndex(fields, startIndex, values) {
   return -1;
 }
 
-// Rellena automáticamente todos los campos que el usuario no ve
 function autoFillRemainingFields(fields, values) {
   const result = { ...values };
   for (const f of fields) {
@@ -178,12 +225,10 @@ function autoFillRemainingFields(fields, values) {
   return result;
 }
 
-// Cuenta los campos visibles al usuario (sin hidden/read_only)
 function countUserFields(fields) {
   return fields.filter(f => f.input_type !== 'read_only' && f.input_type !== 'hidden').length;
 }
 
-// Posición del campo visible actual (1-based)
 function userFieldPosition(fields, fieldIndex) {
   let count = 0;
   for (let i = 0; i <= fieldIndex; i++) {
@@ -194,29 +239,28 @@ function userFieldPosition(fields, fieldIndex) {
 }
 
 function presentField(fields, idx) {
-  const field = fields[idx];
+  const field   = fields[idx];
   const current = userFieldPosition(fields, idx);
-  const total = countUserFields(fields);
-  const req = field.mandatory === 'yes' ? '_(requerido)_' : '_(opcional)_';
+  const total   = countUserFields(fields);
+  const req     = field.mandatory === 'yes' ? '_(requerido)_' : '_(opcional)_';
 
   let msg = `📋 *Campo ${current} de ${total}* ${req}\n\n*${field.label}*`;
 
+  // Campo con opciones → lista interactiva
   if (field.options && field.options.length > 0) {
-    msg += '\n\n' + field.options.map((o, i) => `${i + 1}. ${o.label}`).join('\n');
-    msg += '\n\n_Respondé con el número._';
-  } else if (field.input_type === 'date') {
-    msg += '\n\n_Formato: DD/MM/AAAA_';
-  } else if (field.input_type === 'date_and_time') {
-    msg += '\n\n_Formato: DD/MM/AAAA HH:MM_';
+    const rows = field.options.map((o, i) => ({ id: `opt_${i}`, title: o.label.slice(0, 24) }));
+    rows.push(CANCEL_ROW);
+    return withList(msg, rows);
   }
+
+  if (field.input_type === 'date')          msg += '\n\n_Formato: DD/MM/AAAA_';
+  else if (field.input_type === 'date_and_time') msg += '\n\n_Formato: DD/MM/AAAA HH:MM_';
 
   if (field.mandatory !== 'yes') msg += '\n_Escribí *omitir* para saltear._';
   msg += '\n_Escribí *cancelar* para volver al menú._';
-
   return withCancel(msg);
 }
 
-// Verifica si hay plantilla y transiciona al estado correcto
 async function startTemplateOrTitle(sessionKey, baseUpdate, serviceId, serviceName, subcategoryId, subcategoryName) {
   if (subcategoryId) {
     try {
@@ -224,7 +268,7 @@ async function startTemplateOrTitle(sessionKey, baseUpdate, serviceId, serviceNa
       if (template && template.fields.length > 0) {
         const name = getSession(sessionKey)?.person?.friendlyname || '';
         updateSession(sessionKey, { state: STATES.MAIN_MENU });
-        return `⚠️ La subcategoría *${subcategoryName}* requiere datos adicionales que no se pueden ingresar por WhatsApp.\n\nPor favor, creá el ticket desde el *portal web*.\n\n¿Qué querés hacer, *${name}*?\n\n${MENU_OPTIONS}`;
+        return mainMenuList(`⚠️ La subcategoría *${subcategoryName}* requiere datos adicionales que no se pueden ingresar por WhatsApp.\n\nPor favor, creá el ticket desde el *portal web*.\n\n¿Qué querés hacer, *${name}*?`);
       }
     } catch (err) {
       console.error('[flow] Error buscando plantilla:', err.message);
@@ -240,7 +284,7 @@ async function startTemplateOrTitle(sessionKey, baseUpdate, serviceId, serviceNa
   return withCancel(MSG.ASK_TITLE);
 }
 
-// ──────────────────────────────────────────────────────────────────────────
+// ─── Máquina de estados ────────────────────────────────────────────────────────
 
 async function handleMessage(sessionKey, text, attachment = null) {
   const input = text.trim();
@@ -248,14 +292,12 @@ async function handleMessage(sessionKey, text, attachment = null) {
   try {
     let session = getSession(sessionKey);
 
-    // Sin sesión: pedir CUIL directamente
     if (!session) {
       const expired = wasSessionExpired(sessionKey);
       session = createPendingSession(sessionKey);
       return expired ? MSG.SESSION_EXPIRED : MSG.ASK_PHONE;
     }
 
-    // Usuario que cerró sesión voluntariamente: reactivar con trigger word
     if (session.state === STATES.IDLE) {
       if (TRIGGER_WORDS.includes(input.toLowerCase())) {
         updateSession(sessionKey, { state: STATES.MAIN_MENU });
@@ -264,7 +306,6 @@ async function handleMessage(sessionKey, text, attachment = null) {
       return null;
     }
 
-    // Comando cancelar (excepto identificación)
     if (input.toLowerCase() === 'cancelar' && session.state !== STATES.AWAIT_PHONE) {
       updateSession(sessionKey, {
         state: STATES.MAIN_MENU,
@@ -301,10 +342,10 @@ async function handleMessage(sessionKey, text, attachment = null) {
               return startTemplateOrTitle(sessionKey, {}, services[0].id, services[0].name, null, null);
             }
             updateSession(sessionKey, { state: STATES.SERVICE_SELECT });
-            return withCancel(MSG.ASK_SERVICE(services));
+            return MSG.ASK_SERVICE(services);
           }
           updateSession(sessionKey, { state: STATES.FAMILY_SELECT, families });
-          return withCancel(MSG.ASK_FAMILY(families));
+          return MSG.ASK_FAMILY(families);
         }
         if (input === '2') {
           const tickets = await getTicketsForPerson(session.person.id);
@@ -323,14 +364,14 @@ async function handleMessage(sessionKey, text, attachment = null) {
           endSession(sessionKey);
           return MSG.FAREWELL(name);
         }
-        return MSG.INVALID_MENU;
+        return MSG.INVALID_MENU();
       }
 
       case STATES.TICKET_LIST:
       case STATES.CLOSED_TICKET_LIST: {
-        const idx = parseInt(input, 10) - 1;
-        if (isNaN(idx) || idx < 0 || idx >= session.tickets.length) {
-          return MSG.INVALID_TICKET(session.tickets.length);
+        const idx = parseSelectionIndex(input);
+        if (idx < 0 || idx >= session.tickets.length) {
+          return MSG.SHOW_TICKETS(session.tickets, session.state === STATES.CLOSED_TICKET_LIST);
         }
         const ticket = session.tickets[idx];
         const detail = await getTicketDetail(ticket.id);
@@ -354,10 +395,10 @@ async function handleMessage(sessionKey, text, attachment = null) {
               return startTemplateOrTitle(sessionKey, {}, services[0].id, services[0].name, null, null);
             }
             updateSession(sessionKey, { state: STATES.SERVICE_SELECT });
-            return withCancel(MSG.ASK_SERVICE(services));
+            return MSG.ASK_SERVICE(services);
           }
           updateSession(sessionKey, { state: STATES.FAMILY_SELECT, families });
-          return withCancel(MSG.ASK_FAMILY(families));
+          return MSG.ASK_FAMILY(families);
         }
         if (input === '2') {
           const resolved = session.ticketListType === 'resolved';
@@ -377,7 +418,7 @@ async function handleMessage(sessionKey, text, attachment = null) {
       }
 
       case STATES.AWAIT_COMMENT: {
-        if (!input) return MSG.ASK_COMMENT;
+        if (!input) return withCancel(MSG.ASK_COMMENT);
         const { viewedTicketId, viewedTicketRef } = session;
         try {
           await addCommentToTicket(viewedTicketId, input);
@@ -390,9 +431,9 @@ async function handleMessage(sessionKey, text, attachment = null) {
       }
 
       case STATES.FAMILY_SELECT: {
-        const idx = parseInt(input, 10) - 1;
-        if (isNaN(idx) || idx < 0 || idx >= session.families.length) {
-          return MSG.INVALID_FAMILY(session.families.length);
+        const idx = parseSelectionIndex(input);
+        if (idx < 0 || idx >= session.families.length) {
+          return MSG.ASK_FAMILY(session.families);
         }
         const family = session.families[idx];
         const services = await getServicesForOrgAndFamily(session.person.org_id, family.id);
@@ -407,16 +448,16 @@ async function handleMessage(sessionKey, text, attachment = null) {
             return startTemplateOrTitle(sessionKey, {}, services[0].id, services[0].name, subcategories[0].id, subcategories[0].name);
           }
           updateSession(sessionKey, { state: STATES.SUBCAT_SELECT, serviceId: services[0].id, serviceName: services[0].name, subcategories });
-          return withCancel(MSG.ASK_SUBCAT(subcategories));
+          return MSG.ASK_SUBCAT(subcategories);
         }
         updateSession(sessionKey, { state: STATES.SERVICE_SELECT });
-        return withCancel(MSG.ASK_SERVICE(services));
+        return MSG.ASK_SERVICE(services);
       }
 
       case STATES.SERVICE_SELECT: {
-        const idx = parseInt(input, 10) - 1;
-        if (isNaN(idx) || idx < 0 || idx >= session.services.length) {
-          return MSG.INVALID_SERVICE(session.services.length);
+        const idx = parseSelectionIndex(input);
+        if (idx < 0 || idx >= session.services.length) {
+          return MSG.ASK_SERVICE(session.services);
         }
         const service = session.services[idx];
         const subcategories = await getSubcategoriesForService(service.id);
@@ -427,13 +468,13 @@ async function handleMessage(sessionKey, text, attachment = null) {
           return startTemplateOrTitle(sessionKey, {}, service.id, service.name, subcategories[0].id, subcategories[0].name);
         }
         updateSession(sessionKey, { state: STATES.SUBCAT_SELECT, serviceId: service.id, serviceName: service.name, subcategories });
-        return withCancel(MSG.ASK_SUBCAT(subcategories));
+        return MSG.ASK_SUBCAT(subcategories);
       }
 
       case STATES.SUBCAT_SELECT: {
-        const idx = parseInt(input, 10) - 1;
-        if (isNaN(idx) || idx < 0 || idx >= session.subcategories.length) {
-          return MSG.INVALID_SUBCAT(session.subcategories.length);
+        const idx = parseSelectionIndex(input);
+        if (idx < 0 || idx >= session.subcategories.length) {
+          return MSG.ASK_SUBCAT(session.subcategories);
         }
         const subcat = session.subcategories[idx];
         return startTemplateOrTitle(sessionKey, {}, session.serviceId, session.serviceName, subcat.id, subcat.name);
@@ -443,7 +484,6 @@ async function handleMessage(sessionKey, text, attachment = null) {
         const { templateFields, templateFieldIndex, templateValues } = session;
         const field = templateFields[templateFieldIndex];
 
-        // Omitir campo opcional
         if (input.toLowerCase() === 'omitir' && field.mandatory !== 'yes') {
           const newValues = { ...templateValues, [field.code]: field.initial_value || '' };
           const nextIdx = findNextFieldIndex(templateFields, templateFieldIndex + 1, newValues);
@@ -455,14 +495,12 @@ async function handleMessage(sessionKey, text, attachment = null) {
           return presentField(templateFields, nextIdx);
         }
 
-        // Validar y parsear según tipo
         let value;
 
         if (field.options && field.options.length > 0) {
-          const optIdx = parseInt(input, 10) - 1;
-          if (isNaN(optIdx) || optIdx < 0 || optIdx >= field.options.length) {
-            return withCancel(`⚠️ Respondé con un número entre *1* y *${field.options.length}*.\n\n` +
-              field.options.map((o, i) => `${i + 1}. ${o.label}`).join('\n'));
+          const optIdx = parseOptIndex(input);
+          if (optIdx < 0 || optIdx >= field.options.length) {
+            return presentField(templateFields, templateFieldIndex);
           }
           value = field.options[optIdx].id;
         } else if (field.input_type === 'date') {
@@ -477,18 +515,16 @@ async function handleMessage(sessionKey, text, attachment = null) {
           value = input;
         }
 
-        // Campo requerido vacío
         if (!value && field.mandatory === 'yes') {
           return presentField(templateFields, templateFieldIndex);
         }
 
-        // Validar formato regex si existe
         if (value && field.format) {
           try {
             if (!new RegExp(field.format).test(value)) {
               return withCancel(`⚠️ El valor no tiene el formato requerido para *${field.label}*. Intentá de nuevo.\n_Escribí *cancelar* para volver al menú._`);
             }
-          } catch (_) { /* regex inválida en template, ignorar */ }
+          } catch (_) {}
         }
 
         const newValues = { ...templateValues, [field.code]: value };

@@ -161,14 +161,51 @@ function buildPayload(to, response) {
     return { ...base, type: 'text', text: { body: response, preview_url: false } };
   }
 
-  const { text, buttons } = response;
+  const { text, buttons, list } = response;
 
-  // Sin botones o demasiados botones: mensaje de texto plano
-  if (!buttons?.length || buttons.length > 3) {
-    return { ...base, type: 'text', text: { body: text, preview_url: false } };
+  // Mensaje interactivo tipo lista (selector nativo de WhatsApp)
+  if (list) {
+    // Meta permite máximo 10 filas en total; si hay más, cae a texto numerado
+    const dataRows = list.rows.filter(r => r.id !== 'cancelar');
+    const cancelRow = list.rows.find(r => r.id === 'cancelar');
+    const allRows = cancelRow ? [...dataRows, cancelRow] : dataRows;
+
+    if (allRows.length > 10) {
+      const textFallback = dataRows.map((r, i) => `${i + 1}. ${r.title}`).join('\n');
+      const suffix = cancelRow ? '\n\n_Escribí *cancelar* para volver al menú._' : '';
+      return { ...base, type: 'text', text: { body: `${text}\n\n${textFallback}${suffix}`, preview_url: false } };
+    }
+
+    return {
+      ...base,
+      type: 'interactive',
+      interactive: {
+        type: 'list',
+        body: { text },
+        action: {
+          button: (list.button || 'Ver opciones').slice(0, 20),
+          sections: [{
+            title: 'Opciones',
+            rows: allRows.map(r => {
+              const row = { id: r.id, title: r.title.slice(0, 24) };
+              if (r.description) row.description = r.description.slice(0, 72);
+              return row;
+            }),
+          }],
+        },
+      },
+    };
   }
 
-  // Mensaje interactivo con botones (máximo 3, Meta limita los títulos a 20 chars)
+  // Sin botones o demasiados: texto plano (con opciones anexadas si las hay)
+  if (!buttons?.length || buttons.length > 3) {
+    const suffix = buttons?.length > 3
+      ? '\n\n' + buttons.map((b, i) => `${i + 1}. ${b.label}`).join('\n')
+      : '';
+    return { ...base, type: 'text', text: { body: text + suffix, preview_url: false } };
+  }
+
+  // Mensaje interactivo con botones (1–3, Meta limita títulos a 20 chars)
   return {
     ...base,
     type: 'interactive',
