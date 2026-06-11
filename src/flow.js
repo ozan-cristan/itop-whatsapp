@@ -48,9 +48,9 @@ const STATUS_EMOJI = {
 const MENU_OPTIONS = '1. Nueva solicitud\n2. Consultar solicitudes activas\n3. Consultar solicitudes resueltas\n4. Salir';
 
 const MSG = {
-  ASK_PHONE: '👋 ¡Bienvenido! Para identificarte, ingresá tu *CUIL* (sin guiones ni espacios):',
-  SESSION_EXPIRED: '⏱️ Tu sesión expiró por inactividad. Ingresá tu *CUIL* para identificarte nuevamente:',
-  PHONE_NOT_FOUND: '❌ No encontramos ese CUIL en el sistema. Verificá e ingresalo de nuevo:',
+  ASK_PHONE: '👋 ¡Bienvenido! Para identificarte, ingresá tu *CUIT* (sin guiones ni espacios):',
+  SESSION_EXPIRED: '⏱️ Tu sesión expiró por inactividad. Ingresá tu *CUIT* para identificarte nuevamente:',
+  PHONE_NOT_FOUND: '❌ No encontramos ese CUIT en el sistema. Verificá e ingresalo de nuevo:',
   PHONE_ERROR: '⚠️ No pudimos conectar con el sistema en este momento. Intentá de nuevo:',
 
   WELCOME: (name) => `👋 Hola *${name}*. ¿Qué querés hacer?\n\n${MENU_OPTIONS}`,

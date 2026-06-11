@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<itop_design xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="3.0">
+  <constants/>
+  <classes>
+    <class id="Person">
+
+      <properties>
+        <uniqueness_rules>
+          <rule id="cuit_unique" _delta="define">
+            <attributes>
+              <attribute id="cuit"/>
+            </attributes>
+            <filter><![CDATA[cuit != '']]></filter>
+            <is_blocking>true</is_blocking>
+          </rule>
+        </uniqueness_rules>
+      </properties>
+
+      <fields>
+        <field id="cuit" xsi:type="AttributeString" _delta="define">
+          <sql>cuit</sql>
+          <default_value/>
+          <is_null_allowed>true</is_null_allowed>
+          <max_size>20</max_size>
+        </field>
+      </fields>
+
+      <presentation _delta="merge">
+        <details>
+          <items>
+            <item id="cuit">
+              <rank>85</rank>
+            </item>
+          </items>
+        </details>
+        <search>
+          <items>
+            <item id="cuit">
+              <rank>30</rank>
+            </item>
+          </items>
+        </search>
+        <list>
+          <items>
+            <item id="cuit">
+              <rank>85</rank>
+            </item>
+          </items>
+        </list>
+      </presentation>
+
+    </class>
+  </classes>
+  <menus/>
+  <user_rights>
+    <groups/>
+    <profiles/>
+  </user_rights>
+</itop_design>
