@@ -209,9 +209,10 @@ async function handleMessage(sessionKey, text, attachment = null) {
           return MSG.SHOW_TICKETS(tickets);
         }
         if (input === 'garantia') {
+          const menu = await buildMainMenu(sessionKey, '¿Qué más necesitás?');
           return GARANTIA_URL
-            ? `📄 *Políticas de garantía*\n\n${GARANTIA_URL}`
-            : '⚠️ El documento de políticas de garantía no está disponible en este momento.';
+            ? [`📄 *Políticas de garantía*\n\n${GARANTIA_URL}`, menu]
+            : ['⚠️ El documento de políticas de garantía no está disponible en este momento.', menu];
         }
         if (input === 'salir') {
           const name = session.person.friendlyname;

@@ -66,7 +66,11 @@ async function processWebhook(body) {
     console.log(`[bot] Mensaje de ${from}: tipo=${message.type} texto="${text}"`);
 
     const response = await handleMessage(from, text, attachment);
-    if (response) await sendMessage(from, response);
+    if (Array.isArray(response)) {
+      for (const msg of response) if (msg) await sendMessage(from, msg);
+    } else if (response) {
+      await sendMessage(from, response);
+    }
 
   } catch (err) {
     console.error(`[bot] Error procesando mensaje de ${from}:`, err.message);
