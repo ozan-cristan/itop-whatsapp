@@ -176,7 +176,9 @@ async function handleMessage(sessionKey, text, attachment = null) {
       return null;
     }
 
-    if (input.toLowerCase() === 'cancelar' && session.state !== STATES.AWAIT_PHONE) {
+    if (input.toLowerCase() === 'cancelar' &&
+        session.state !== STATES.AWAIT_PHONE &&
+        session.state !== STATES.AWAIT_ATTACHMENT) {
       return buildMainMenu(sessionKey, '↩️ Operación cancelada.');
     }
 
@@ -208,6 +210,7 @@ async function handleMessage(sessionKey, text, attachment = null) {
           endSession(sessionKey);
           return MSG.FAREWELL(name);
         }
+        if (!input) return null;
         const idx = parseSelectionIndex(input);
         if (idx < 0 || idx >= (session.services || []).length) {
           return buildMainMenu(sessionKey, '⚠️ Opción inválida. ¿Qué necesitás?');
