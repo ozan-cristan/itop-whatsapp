@@ -119,13 +119,15 @@ const MSG = {
     [...subcats.map((s, i) => ({ id: `sel_${i}`, title: s.name.slice(0, 24) })), CANCEL_ROW]
   ),
 
+  ASK_SKU:   withCancel('🏷️ Ingresá el *SKU* o código del producto (si aplica):\n\n_Escribí *omitir* si no corresponde._\n_Escribí *cancelar* para volver al menú._'),
   ASK_TITLE: '📝 *Paso 1 de 2* — Ingresá el *título* del reporte:\n\n_Escribí *cancelar* para volver al menú._',
   ASK_DESC:  '📄 *Paso 2 de 2* — Ingresá la *descripción* del problema:\n\n_Escribí *cancelar* para volver al menú._',
 
-  CONFIRM_TICKET: (serviceName, subcatName, title, desc, templateFields, templateValues) => {
+  CONFIRM_TICKET: (serviceName, subcatName, sku, title, desc, templateFields, templateValues) => {
     let msg = `📋 *Resumen de tu solicitud*\n\n`;
     msg += `🔧 Servicio: ${serviceName}\n`;
     if (subcatName) msg += `📂 Subcategoría: ${subcatName}\n`;
+    if (sku)        msg += `🏷️ SKU: ${sku}\n`;
     if (templateFields && templateFields.length > 0 && templateValues) {
       const userFields = templateFields.filter(f => f.input_type !== 'read_only' && f.input_type !== 'hidden');
       for (const f of userFields) {
@@ -278,10 +280,11 @@ async function startTemplateOrTitle(sessionKey, baseUpdate, serviceId, serviceNa
   updateSession(sessionKey, {
     ...baseUpdate,
     serviceId, serviceName, subcategoryId, subcategoryName,
-    state: STATES.AWAIT_TITLE,
+    state: STATES.AWAIT_SKU,
+    sku: null,
     templateId: null, templateFields: [], templateFieldIndex: 0, templateValues: {},
   });
-  return withCancel(MSG.ASK_TITLE);
+  return MSG.ASK_SKU;
 }
 
 // ─── Máquina de estados ────────────────────────────────────────────────────────
@@ -309,7 +312,7 @@ async function handleMessage(sessionKey, text, attachment = null) {
     if (input.toLowerCase() === 'cancelar' && session.state !== STATES.AWAIT_PHONE) {
       updateSession(sessionKey, {
         state: STATES.MAIN_MENU,
-        templateId: null, templateFields: [], templateFieldIndex: 0, templateValues: {},
+        sku: null, templateId: null, templateFields: [], templateFieldIndex: 0, templateValues: {},
       });
       return MSG.CANCEL_MSG(session.person.friendlyname);
     }
@@ -538,6 +541,12 @@ async function handleMessage(sessionKey, text, attachment = null) {
         return presentField(templateFields, nextIdx);
       }
 
+      case STATES.AWAIT_SKU: {
+        const skuValue = ['omitir', 'skip', 'no'].includes(input.toLowerCase()) ? null : input || null;
+        updateSession(sessionKey, { state: STATES.AWAIT_TITLE, sku: skuValue });
+        return withCancel(MSG.ASK_TITLE);
+      }
+
       case STATES.AWAIT_TITLE: {
         if (!input) return withCancel(MSG.ASK_TITLE);
         updateSession(sessionKey, { state: STATES.AWAIT_DESC, title: input });
@@ -546,24 +555,24 @@ async function handleMessage(sessionKey, text, attachment = null) {
 
       case STATES.AWAIT_DESC: {
         if (!input) return withCancel(MSG.ASK_DESC);
-        const { serviceName, subcategoryName, templateFields, templateValues, title } = session;
+        const { serviceName, subcategoryName, sku, templateFields, templateValues, title } = session;
         updateSession(sessionKey, { state: STATES.AWAIT_CONFIRM, description: input });
-        return withButtons(MSG.CONFIRM_TICKET(serviceName, subcategoryName, title, input, templateFields, templateValues), [BTN_CONFIRM, BTN_MODIFY, BTN_CANCEL]);
+        return withButtons(MSG.CONFIRM_TICKET(serviceName, subcategoryName, sku, title, input, templateFields, templateValues), [BTN_CONFIRM, BTN_MODIFY, BTN_CANCEL]);
       }
 
       case STATES.AWAIT_CONFIRM: {
         if (['1', 'si', 'sí', 'yes'].includes(input.toLowerCase())) {
-          const { person, serviceId, subcategoryId, title, description, templateId, templateValues } = session;
+          const { person, serviceId, subcategoryId, title, description, sku, templateId, templateValues } = session;
           const serviceDetails = templateId
             ? { template_id: String(templateId), values: templateValues || {} }
             : null;
-          const ticket = await createUserRequest(person, serviceId, subcategoryId, title, description, serviceDetails);
+          const ticket = await createUserRequest(person, serviceId, subcategoryId, title, description, serviceDetails, sku);
           updateSession(sessionKey, { state: STATES.AWAIT_ATTACHMENT, ticketId: ticket.id, ticketRef: ticket.ref });
           return MSG.ASK_ATTACHMENT(ticket.ref);
         }
         if (['2', 'no'].includes(input.toLowerCase())) {
-          updateSession(sessionKey, { state: STATES.AWAIT_TITLE, title: null, description: null });
-          return withCancel(MSG.ASK_TITLE);
+          updateSession(sessionKey, { state: STATES.AWAIT_SKU, sku: null, title: null, description: null });
+          return MSG.ASK_SKU;
         }
         return MSG.INVALID_CONFIRM;
       }

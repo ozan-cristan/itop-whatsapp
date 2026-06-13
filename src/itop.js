@@ -226,7 +226,7 @@ async function getTemplateForSubcategory(serviceId, subcategoryId) {
  * serviceDetails: { template_id, values: { code: value } } o null.
  * Retorna { id, ref } del ticket creado.
  */
-async function createUserRequest(person, serviceId, subcategoryId, title, description, serviceDetails = null) {
+async function createUserRequest(person, serviceId, subcategoryId, title, description, serviceDetails = null, sku = null) {
   const fields = {
     org_id: `SELECT Organization WHERE id = ${person.org_id}`,
     caller_id: `SELECT Person WHERE id = ${person.id}`,
@@ -237,6 +237,7 @@ async function createUserRequest(person, serviceId, subcategoryId, title, descri
     origin: 'chat',
   };
   if (serviceDetails) fields.service_details = serviceDetails;
+  if (sku) fields.sku = sku;
 
   const result = await itopRequest('core/create', {
     class: 'UserRequest',
