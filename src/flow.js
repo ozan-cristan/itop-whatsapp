@@ -10,6 +10,8 @@ const {
 
 const TRIGGER_WORDS = ['hola', 'inicio', 'ticket', 'ayuda', 'help', 'start'];
 
+const GARANTIA_URL = process.env.GARANTIA_URL || '';
+
 // ─── Constructores de respuesta ───────────────────────────────────────────────
 
 function withButtons(text, buttons) { return { text, buttons }; }
@@ -40,6 +42,7 @@ async function buildMainMenu(sessionKey, headerText) {
   const rows = [
     ...services.map((s, i) => ({ id: `sel_${i}`, title: s.name.slice(0, 24) })),
     { id: 'seguimiento', title: '📋 Seguimiento' },
+    { id: 'garantia',   title: '📄 Políticas de garantía' },
     { id: 'salir',       title: '👋 Salir' },
   ];
   return withList(headerText || `👋 Hola *${name}*. ¿Qué necesitás?`, rows);
@@ -204,6 +207,11 @@ async function handleMessage(sessionKey, text, attachment = null) {
           if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés solicitudes activas.\n\n¿Qué querés hacer?');
           updateSession(sessionKey, { state: STATES.TICKET_LIST, tickets });
           return MSG.SHOW_TICKETS(tickets);
+        }
+        if (input === 'garantia') {
+          return GARANTIA_URL
+            ? `📄 *Políticas de garantía*\n\n${GARANTIA_URL}`
+            : '⚠️ El documento de políticas de garantía no está disponible en este momento.';
         }
         if (input === 'salir') {
           const name = session.person.friendlyname;
