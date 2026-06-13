@@ -2,7 +2,7 @@ const { STATES, getSession, wasSessionExpired, createSession, createPendingSessi
 const {
   findPersonByCuil,
   getFamiliesForOrg, getServicesForOrgAndFamily,
-  getSubcategoriesForService, getTemplateForSubcategory,
+  getSubcategoriesForService,
   createUserRequest, attachToTicket,
   getTicketsForPerson, getResolvedTicketsForPerson,
   getTicketDetail, addCommentToTicket,
@@ -45,13 +45,6 @@ function mainMenuList(promptText) {
 // Interpreta IDs de lista (sel_0, sel_1…) o texto numérico (1, 2…)
 function parseSelectionIndex(input) {
   if (input.startsWith('sel_')) return parseInt(input.slice(4), 10);
-  const n = parseInt(input, 10);
-  return isNaN(n) ? -1 : n - 1;
-}
-
-// Interpreta IDs de opciones de campo (opt_0, opt_1…) o texto numérico
-function parseOptIndex(input) {
-  if (input.startsWith('opt_')) return parseInt(input.slice(4), 10);
   const n = parseInt(input, 10);
   return isNaN(n) ? -1 : n - 1;
 }
@@ -123,21 +116,11 @@ const MSG = {
   ASK_TITLE: '📝 *Paso 1 de 2* — Ingresá el *título* del reporte:\n\n_Escribí *cancelar* para volver al menú._',
   ASK_DESC:  '📄 *Paso 2 de 2* — Ingresá la *descripción* del problema:\n\n_Escribí *cancelar* para volver al menú._',
 
-  CONFIRM_TICKET: (serviceName, subcatName, sku, title, desc, templateFields, templateValues) => {
+  CONFIRM_TICKET: (serviceName, subcatName, sku, title, desc) => {
     let msg = `📋 *Resumen de tu solicitud*\n\n`;
     msg += `🔧 Servicio: ${serviceName}\n`;
     if (subcatName) msg += `📂 Subcategoría: ${subcatName}\n`;
     if (sku)        msg += `🏷️ SKU: ${sku}\n`;
-    if (templateFields && templateFields.length > 0 && templateValues) {
-      const userFields = templateFields.filter(f => f.input_type !== 'read_only' && f.input_type !== 'hidden');
-      for (const f of userFields) {
-        const val = templateValues[f.code];
-        if (val !== undefined && val !== '') {
-          const display = f.options ? (f.options.find(o => o.id === val)?.label || val) : val;
-          msg += `📌 ${f.label}: ${display}\n`;
-        }
-      }
-    }
     msg += `📝 Título: ${title}\n`;
     msg += `📄 Descripción: ${desc}\n\n`;
     msg += `¿Confirmás la creación?`;
@@ -196,93 +179,13 @@ const MSG = {
   ERROR: '⚠️ Ocurrió un error al procesar tu solicitud. Intentá nuevamente.',
 };
 
-// ─── Helpers para plantillas ───────────────────────────────────────────────────
-
-function evaluateDisplayCondition(condition, values) {
-  if (!condition) return true;
-  const eqMatch  = condition.match(/:template->(\w+)\s*=\s*'([^']*)'/);
-  const neqMatch = condition.match(/:template->(\w+)\s*!=\s*'([^']*)'/);
-  if (eqMatch)  return (values[eqMatch[1]]  || '') === eqMatch[2];
-  if (neqMatch) return (values[neqMatch[1]] || '') !== neqMatch[2];
-  return true;
-}
-
-function findNextFieldIndex(fields, startIndex, values) {
-  for (let i = startIndex; i < fields.length; i++) {
-    const f = fields[i];
-    if (f.input_type === 'read_only' || f.input_type === 'hidden') continue;
-    if (f.display_condition && !evaluateDisplayCondition(f.display_condition, values)) continue;
-    return i;
-  }
-  return -1;
-}
-
-function autoFillRemainingFields(fields, values) {
-  const result = { ...values };
-  for (const f of fields) {
-    if (!Object.prototype.hasOwnProperty.call(result, f.code)) {
-      result[f.code] = f.initial_value || '';
-    }
-  }
-  return result;
-}
-
-function countUserFields(fields) {
-  return fields.filter(f => f.input_type !== 'read_only' && f.input_type !== 'hidden').length;
-}
-
-function userFieldPosition(fields, fieldIndex) {
-  let count = 0;
-  for (let i = 0; i <= fieldIndex; i++) {
-    const f = fields[i];
-    if (f.input_type !== 'read_only' && f.input_type !== 'hidden') count++;
-  }
-  return count;
-}
-
-function presentField(fields, idx) {
-  const field   = fields[idx];
-  const current = userFieldPosition(fields, idx);
-  const total   = countUserFields(fields);
-  const req     = field.mandatory === 'yes' ? '_(requerido)_' : '_(opcional)_';
-
-  let msg = `📋 *Campo ${current} de ${total}* ${req}\n\n*${field.label}*`;
-
-  // Campo con opciones → lista interactiva
-  if (field.options && field.options.length > 0) {
-    const rows = field.options.map((o, i) => ({ id: `opt_${i}`, title: o.label.slice(0, 24) }));
-    rows.push(CANCEL_ROW);
-    return withList(msg, rows);
-  }
-
-  if (field.input_type === 'date')          msg += '\n\n_Formato: DD/MM/AAAA_';
-  else if (field.input_type === 'date_and_time') msg += '\n\n_Formato: DD/MM/AAAA HH:MM_';
-
-  if (field.mandatory !== 'yes') msg += '\n_Escribí *omitir* para saltear._';
-  msg += '\n_Escribí *cancelar* para volver al menú._';
-  return withCancel(msg);
-}
 
 async function startTemplateOrTitle(sessionKey, baseUpdate, serviceId, serviceName, subcategoryId, subcategoryName) {
-  if (subcategoryId) {
-    try {
-      const template = await getTemplateForSubcategory(serviceId, subcategoryId);
-      if (template && template.fields.length > 0) {
-        const name = getSession(sessionKey)?.person?.friendlyname || '';
-        updateSession(sessionKey, { state: STATES.MAIN_MENU });
-        return mainMenuList(`⚠️ La subcategoría *${subcategoryName}* requiere datos adicionales que no se pueden ingresar por WhatsApp.\n\nPor favor, creá el ticket desde el *portal web*.\n\n¿Qué querés hacer, *${name}*?`);
-      }
-    } catch (err) {
-      console.error('[flow] Error buscando plantilla:', err.message);
-    }
-  }
-
   updateSession(sessionKey, {
     ...baseUpdate,
     serviceId, serviceName, subcategoryId, subcategoryName,
     state: STATES.AWAIT_SKU,
     sku: null,
-    templateId: null, templateFields: [], templateFieldIndex: 0, templateValues: {},
   });
   return MSG.ASK_SKU;
 }
@@ -312,7 +215,7 @@ async function handleMessage(sessionKey, text, attachment = null) {
     if (input.toLowerCase() === 'cancelar' && session.state !== STATES.AWAIT_PHONE) {
       updateSession(sessionKey, {
         state: STATES.MAIN_MENU,
-        sku: null, templateId: null, templateFields: [], templateFieldIndex: 0, templateValues: {},
+        sku: null,
       });
       return MSG.CANCEL_MSG(session.person.friendlyname);
     }
@@ -483,64 +386,6 @@ async function handleMessage(sessionKey, text, attachment = null) {
         return startTemplateOrTitle(sessionKey, {}, session.serviceId, session.serviceName, subcat.id, subcat.name);
       }
 
-      case STATES.AWAIT_TEMPLATE_FIELD: {
-        const { templateFields, templateFieldIndex, templateValues } = session;
-        const field = templateFields[templateFieldIndex];
-
-        if (input.toLowerCase() === 'omitir' && field.mandatory !== 'yes') {
-          const newValues = { ...templateValues, [field.code]: field.initial_value || '' };
-          const nextIdx = findNextFieldIndex(templateFields, templateFieldIndex + 1, newValues);
-          if (nextIdx === -1) {
-            updateSession(sessionKey, { state: STATES.AWAIT_TITLE, templateValues: autoFillRemainingFields(templateFields, newValues), templateFieldIndex: templateFields.length });
-            return withCancel(MSG.ASK_TITLE);
-          }
-          updateSession(sessionKey, { templateFieldIndex: nextIdx, templateValues: newValues });
-          return presentField(templateFields, nextIdx);
-        }
-
-        let value;
-
-        if (field.options && field.options.length > 0) {
-          const optIdx = parseOptIndex(input);
-          if (optIdx < 0 || optIdx >= field.options.length) {
-            return presentField(templateFields, templateFieldIndex);
-          }
-          value = field.options[optIdx].id;
-        } else if (field.input_type === 'date') {
-          const m = input.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-          if (!m) return withCancel(`⚠️ Formato inválido. Usá *DD/MM/AAAA*.\n_Escribí *cancelar* para volver al menú._`);
-          value = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
-        } else if (field.input_type === 'date_and_time') {
-          const m = input.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/);
-          if (!m) return withCancel(`⚠️ Formato inválido. Usá *DD/MM/AAAA HH:MM*.\n_Escribí *cancelar* para volver al menú._`);
-          value = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')} ${m[4].padStart(2, '0')}:${m[5]}:00`;
-        } else {
-          value = input;
-        }
-
-        if (!value && field.mandatory === 'yes') {
-          return presentField(templateFields, templateFieldIndex);
-        }
-
-        if (value && field.format) {
-          try {
-            if (!new RegExp(field.format).test(value)) {
-              return withCancel(`⚠️ El valor no tiene el formato requerido para *${field.label}*. Intentá de nuevo.\n_Escribí *cancelar* para volver al menú._`);
-            }
-          } catch (_) {}
-        }
-
-        const newValues = { ...templateValues, [field.code]: value };
-        const nextIdx = findNextFieldIndex(templateFields, templateFieldIndex + 1, newValues);
-
-        if (nextIdx === -1) {
-          updateSession(sessionKey, { state: STATES.AWAIT_TITLE, templateValues: autoFillRemainingFields(templateFields, newValues), templateFieldIndex: templateFields.length });
-          return withCancel(MSG.ASK_TITLE);
-        }
-        updateSession(sessionKey, { templateFieldIndex: nextIdx, templateValues: newValues });
-        return presentField(templateFields, nextIdx);
-      }
-
       case STATES.AWAIT_SKU: {
         const skuValue = ['omitir', 'skip', 'no'].includes(input.toLowerCase()) ? null : input || null;
         updateSession(sessionKey, { state: STATES.AWAIT_TITLE, sku: skuValue });
@@ -555,18 +400,15 @@ async function handleMessage(sessionKey, text, attachment = null) {
 
       case STATES.AWAIT_DESC: {
         if (!input) return withCancel(MSG.ASK_DESC);
-        const { serviceName, subcategoryName, sku, templateFields, templateValues, title } = session;
+        const { serviceName, subcategoryName, sku, title } = session;
         updateSession(sessionKey, { state: STATES.AWAIT_CONFIRM, description: input });
-        return withButtons(MSG.CONFIRM_TICKET(serviceName, subcategoryName, sku, title, input, templateFields, templateValues), [BTN_CONFIRM, BTN_MODIFY, BTN_CANCEL]);
+        return withButtons(MSG.CONFIRM_TICKET(serviceName, subcategoryName, sku, title, input), [BTN_CONFIRM, BTN_MODIFY, BTN_CANCEL]);
       }
 
       case STATES.AWAIT_CONFIRM: {
         if (['1', 'si', 'sí', 'yes'].includes(input.toLowerCase())) {
-          const { person, serviceId, subcategoryId, title, description, sku, templateId, templateValues } = session;
-          const serviceDetails = templateId
-            ? { template_id: String(templateId), values: templateValues || {} }
-            : null;
-          const ticket = await createUserRequest(person, serviceId, subcategoryId, title, description, serviceDetails, sku);
+          const { person, serviceId, subcategoryId, title, description, sku } = session;
+          const ticket = await createUserRequest(person, serviceId, subcategoryId, title, description, null, sku);
           updateSession(sessionKey, { state: STATES.AWAIT_ATTACHMENT, ticketId: ticket.id, ticketRef: ticket.ref });
           return MSG.ASK_ATTACHMENT(ticket.ref);
         }
