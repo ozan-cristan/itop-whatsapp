@@ -89,16 +89,20 @@ const MSG = {
     [...subcats.map((s, i) => ({ id: `sel_${i}`, title: s.name.slice(0, 24) })), CANCEL_ROW]
   ),
 
-  ASK_SKU:   withCancel('🏷️ Ingresá el *SKU* o código del producto (si aplica):\n\n_Escribí *omitir* si no corresponde._\n_Escribí *cancelar* para volver al menú._'),
-  ASK_TITLE: '📝 *Paso 1 de 2* — Ingresá el *título* del reporte:\n\n_Escribí *cancelar* para volver al menú._',
-  ASK_DESC:  '📄 *Paso 2 de 2* — Ingresá la *descripción* del problema:\n\n_Escribí *cancelar* para volver al menú._',
+  ASK_SKU:            withCancel('🏷️ Ingresá el *SKU* o código del producto (si aplica):\n\n_Escribí *omitir* si no corresponde._\n_Escribí *cancelar* para volver al menú._'),
+  ASK_CUSTOMER_NAME:  withCancel('👤 *Paso 1 de 4* — Ingresá el *nombre y apellido* del cliente:\n\n_Escribí *cancelar* para volver al menú._'),
+  ASK_CUSTOMER_EMAIL: withCancel('📧 *Paso 2 de 4* — Ingresá el *correo electrónico* del cliente:\n\n_Escribí *cancelar* para volver al menú._'),
+  ASK_MOBILE:         withCancel('📱 *Paso 3 de 4* — Ingresá el *número móvil* del cliente:\n\n_Escribí *cancelar* para volver al menú._'),
+  ASK_DESC:           '📄 *Paso 4 de 4* — Ingresá la *descripción* del problema:\n\n_Escribí *cancelar* para volver al menú._',
 
-  CONFIRM_TICKET: (serviceName, subcatName, sku, title, desc) => {
+  CONFIRM_TICKET: (serviceName, subcatName, sku, customerName, customerEmail, numeroMovil, desc) => {
     let msg = `📋 *Resumen de tu solicitud*\n\n`;
     msg += `🔧 Servicio: ${serviceName}\n`;
-    if (subcatName) msg += `📂 Subcategoría: ${subcatName}\n`;
-    if (sku)        msg += `🏷️ SKU: ${sku}\n`;
-    msg += `📝 Título: ${title}\n`;
+    if (subcatName)  msg += `📂 Subcategoría: ${subcatName}\n`;
+    if (sku)         msg += `🏷️ SKU: ${sku}\n`;
+    msg += `👤 Cliente: ${customerName}\n`;
+    msg += `📧 Email: ${customerEmail}\n`;
+    msg += `📱 Móvil: ${numeroMovil}\n`;
     msg += `📄 Descripción: ${desc}\n\n`;
     msg += `¿Confirmás la creación?`;
     return msg;
@@ -154,7 +158,8 @@ function goToSku(sessionKey, serviceId, serviceName, subcategoryId, subcategoryN
   updateSession(sessionKey, {
     serviceId, serviceName, subcategoryId, subcategoryName,
     state: STATES.AWAIT_SKU,
-    sku: null,
+    sku: null, customerName: null, customerEmail: null, numeroMovil: null,
+    title: null, description: null,
   });
   return MSG.ASK_SKU;
 }
@@ -291,32 +296,45 @@ async function handleMessage(sessionKey, text, attachment = null) {
 
       case STATES.AWAIT_SKU: {
         const skuValue = ['omitir', 'skip', 'no'].includes(input.toLowerCase()) ? null : input || null;
-        updateSession(sessionKey, { state: STATES.AWAIT_TITLE, sku: skuValue });
-        return withCancel(MSG.ASK_TITLE);
+        updateSession(sessionKey, { state: STATES.AWAIT_CUSTOMER_NAME, sku: skuValue });
+        return MSG.ASK_CUSTOMER_NAME;
       }
 
-      case STATES.AWAIT_TITLE: {
-        if (!input) return withCancel(MSG.ASK_TITLE);
-        updateSession(sessionKey, { state: STATES.AWAIT_DESC, title: input });
+      case STATES.AWAIT_CUSTOMER_NAME: {
+        if (!input) return MSG.ASK_CUSTOMER_NAME;
+        updateSession(sessionKey, { state: STATES.AWAIT_CUSTOMER_EMAIL, customerName: input });
+        return MSG.ASK_CUSTOMER_EMAIL;
+      }
+
+      case STATES.AWAIT_CUSTOMER_EMAIL: {
+        if (!input) return MSG.ASK_CUSTOMER_EMAIL;
+        updateSession(sessionKey, { state: STATES.AWAIT_MOBILE, customerEmail: input });
+        return MSG.ASK_MOBILE;
+      }
+
+      case STATES.AWAIT_MOBILE: {
+        if (!input) return MSG.ASK_MOBILE;
+        updateSession(sessionKey, { state: STATES.AWAIT_DESC, numeroMovil: input });
         return withCancel(MSG.ASK_DESC);
       }
 
       case STATES.AWAIT_DESC: {
         if (!input) return withCancel(MSG.ASK_DESC);
-        const { serviceName, subcategoryName, sku, title } = session;
+        const { serviceName, subcategoryName, sku, customerName, customerEmail, numeroMovil } = session;
         updateSession(sessionKey, { state: STATES.AWAIT_CONFIRM, description: input });
-        return withButtons(MSG.CONFIRM_TICKET(serviceName, subcategoryName, sku, title, input), [BTN_CONFIRM, BTN_MODIFY, BTN_CANCEL]);
+        return withButtons(MSG.CONFIRM_TICKET(serviceName, subcategoryName, sku, customerName, customerEmail, numeroMovil, input), [BTN_CONFIRM, BTN_MODIFY, BTN_CANCEL]);
       }
 
       case STATES.AWAIT_CONFIRM: {
         if (['1', 'si', 'sí', 'yes'].includes(input.toLowerCase())) {
-          const { person, serviceId, subcategoryId, title, description, sku } = session;
-          const ticket = await createUserRequest(person, serviceId, subcategoryId, title, description, null, sku);
+          const { person, serviceId, subcategoryId, customerName, customerEmail, numeroMovil, description, sku } = session;
+          const title = `${customerName} | ${customerEmail}`;
+          const ticket = await createUserRequest(person, serviceId, subcategoryId, title, description, null, sku, numeroMovil);
           updateSession(sessionKey, { state: STATES.AWAIT_ATTACHMENT, ticketId: ticket.id, ticketRef: ticket.ref });
           return MSG.ASK_ATTACHMENT(ticket.ref);
         }
         if (['2', 'no'].includes(input.toLowerCase())) {
-          updateSession(sessionKey, { state: STATES.AWAIT_SKU, sku: null, title: null, description: null });
+          updateSession(sessionKey, { state: STATES.AWAIT_SKU, sku: null, customerName: null, customerEmail: null, numeroMovil: null, title: null, description: null });
           return MSG.ASK_SKU;
         }
         return MSG.INVALID_CONFIRM;
