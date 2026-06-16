@@ -249,39 +249,44 @@ app.post('/itop-notify', (req, res) => {
 async function processItopNotification(body) {
   const ticketId = body.ticket_id;
   const ref      = body.ref || `#${ticketId}`;
+  const type     = body.type || 'log_update';
 
   if (!ticketId) {
     console.warn('[notify] Payload sin ticket_id:', JSON.stringify(body));
     return;
   }
 
-  const [detail, caller] = await Promise.all([
-    getTicketDetail(ticketId),
-    getCallerForTicket(ticketId),
-  ]);
+  const caller = await getCallerForTicket(ticketId);
 
   if (!caller?.phone) {
     console.warn(`[notify] Ticket ${ref}: solicitante sin teléfono móvil registrado`);
     return;
   }
 
-  // Normalizar teléfono: quitar '+' y espacios para que coincida con el formato de Meta
   const to = caller.phone.replace(/^\+/, '').replace(/\s/g, '');
 
-  let msg = `📋 *Actualización en tu ticket ${ref}*\n`;
-  if (detail?.title) msg += `_${detail.title}_\n`;
-  msg += '\n';
+  let msg;
 
-  if (detail?.lastLogMessage) {
-    const text = detail.lastLogMessage.replace(/<[^>]+>/g, '').trim();
-    msg += `💬 ${text}\n\n`;
+  if (type === 'resolved') {
+    const solution = (body.solution || '').replace(/<[^>]+>/g, '').trim();
+    msg = `✅ *Tu ticket ${ref} fue solucionado*\n_${caller.name}_\n\n`;
+    if (solution) msg += `📝 *Solución:* ${solution}\n\n`;
+    msg += '_Si el problema persiste, escribí *hola* para abrir un nuevo ticket._';
+  } else {
+    const detail = await getTicketDetail(ticketId);
+    msg = `📋 *Actualización en tu ticket ${ref}*\n`;
+    if (detail?.title) msg += `_${detail.title}_\n`;
+    msg += '\n';
+    if (detail?.lastLogMessage) {
+      const text = detail.lastLogMessage.replace(/<[^>]+>/g, '').trim();
+      msg += `💬 ${text}\n\n`;
+    }
+    msg += '_Podés responder escribiendo directamente aquí o consultá el estado desde el menú._';
+    setPendingReply(to, ticketId, ref);
   }
 
-  msg += '_Podés responder escribiendo directamente aquí o consultá el estado desde el menú._';
-
-  console.log(`[notify] Enviando notificación de ${ref} a ${to}`);
+  console.log(`[notify] Enviando notificación ${type} de ${ref} a ${to}`);
   await sendMessage(to, msg);
-  setPendingReply(to, ticketId, ref);
 }
 
 app.listen(PORT, () => {
