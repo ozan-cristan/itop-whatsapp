@@ -343,6 +343,33 @@ async function getResolvedTicketsForPerson(personId) {
 }
 
 /**
+ * Devuelve el teléfono móvil y nombre del solicitante de un ticket.
+ * Retorna { phone, name } o null.
+ */
+async function getCallerForTicket(ticketId) {
+  const ticketResult = await itopRequest('core/get', {
+    class: 'UserRequest',
+    key: `SELECT UserRequest WHERE id = ${ticketId}`,
+    output_fields: 'caller_id,caller_id_friendlyname',
+  });
+  if (!ticketResult.objects) return null;
+
+  const fields = Object.values(ticketResult.objects)[0].fields;
+  const personId = fields.caller_id;
+  const name = fields.caller_id_friendlyname;
+
+  const personResult = await itopRequest('core/get', {
+    class: 'Person',
+    key: `SELECT Person WHERE id = ${personId}`,
+    output_fields: 'mobile_phone',
+  });
+  if (!personResult.objects) return null;
+
+  const phone = Object.values(personResult.objects)[0].fields.mobile_phone;
+  return phone ? { phone, name } : null;
+}
+
+/**
  * Agrega un comentario público a un ticket existente.
  */
 async function addCommentToTicket(ticketId, comment) {
@@ -362,4 +389,4 @@ async function addCommentToTicket(ticketId, comment) {
   });
 }
 
-module.exports = { findPersonByMobile, findPersonByCuil, getFamiliesForOrg, getServicesForOrgAndFamily, getServicesForOrg, getSubcategoriesForService, getTemplateForSubcategory, createUserRequest, attachToTicket, getTicketsForPerson, getResolvedTicketsForPerson, getTicketDetail, addCommentToTicket };
+module.exports = { findPersonByMobile, findPersonByCuil, getFamiliesForOrg, getServicesForOrgAndFamily, getServicesForOrg, getSubcategoriesForService, getTemplateForSubcategory, createUserRequest, attachToTicket, getTicketsForPerson, getResolvedTicketsForPerson, getTicketDetail, getCallerForTicket, addCommentToTicket };

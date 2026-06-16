@@ -4,6 +4,7 @@ const axios = require('axios');
 const { Mutex } = require('async-mutex');
 const { handleMessage } = require('./flow');
 const { getSession } = require('./state');
+const { getTicketDetail, getCallerForTicket } = require('./itop');
 
 const VERIFY_TOKEN    = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN  = process.env.WHATSAPP_TOKEN;
@@ -227,6 +228,59 @@ function buildPayload(to, response) {
       },
     },
   };
+}
+
+// ── Notificaciones entrantes desde iTop (combodo-webhook-integration) ─────────
+const ITOP_WEBHOOK_SECRET = process.env.ITOP_WEBHOOK_SECRET || '';
+
+app.post('/itop-notify', (req, res) => {
+  const secret = req.headers['x-itop-secret'];
+  if (ITOP_WEBHOOK_SECRET && secret !== ITOP_WEBHOOK_SECRET) {
+    console.warn('[notify] Intento con secret inválido');
+    return res.sendStatus(401);
+  }
+  res.sendStatus(200); // responder rápido para que iTop no reintente
+
+  processItopNotification(req.body).catch(err =>
+    console.error('[notify] Error no capturado:', err.message)
+  );
+});
+
+async function processItopNotification(body) {
+  const ticketId = body.ticket_id;
+  const ref      = body.ref || `#${ticketId}`;
+
+  if (!ticketId) {
+    console.warn('[notify] Payload sin ticket_id:', JSON.stringify(body));
+    return;
+  }
+
+  const [detail, caller] = await Promise.all([
+    getTicketDetail(ticketId),
+    getCallerForTicket(ticketId),
+  ]);
+
+  if (!caller?.phone) {
+    console.warn(`[notify] Ticket ${ref}: solicitante sin teléfono móvil registrado`);
+    return;
+  }
+
+  // Normalizar teléfono: quitar '+' y espacios para que coincida con el formato de Meta
+  const to = caller.phone.replace(/^\+/, '').replace(/\s/g, '');
+
+  let msg = `📋 *Actualización en tu ticket ${ref}*\n`;
+  if (detail?.title) msg += `_${detail.title}_\n`;
+  msg += '\n';
+
+  if (detail?.lastLogMessage) {
+    const text = detail.lastLogMessage.replace(/<[^>]+>/g, '').trim();
+    msg += `💬 ${text}\n\n`;
+  }
+
+  msg += '_Podés responder escribiendo directamente aquí o consultá el estado desde el menú._';
+
+  console.log(`[notify] Enviando notificación de ${ref} a ${to}`);
+  await sendMessage(to, msg);
 }
 
 app.listen(PORT, () => {
