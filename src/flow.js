@@ -1,4 +1,4 @@
-const { STATES, getSession, wasSessionExpired, createPendingSession, updateSession, clearSession, endSession } = require('./state');
+const { STATES, getSession, wasSessionExpired, createPendingSession, updateSession, clearSession, endSession, getPendingReply, clearPendingReply } = require('./state');
 const {
   findPersonByCuil,
   getServicesForOrg,
@@ -7,6 +7,7 @@ const {
   getTicketsForPerson,
   getTicketDetail, addCommentToTicket,
 } = require('./itop');
+
 
 const TRIGGER_WORDS = ['hola', 'inicio', 'ticket', 'ayuda', 'help', 'start'];
 
@@ -164,6 +165,18 @@ async function handleMessage(sessionKey, text, attachment = null) {
   const input = text.trim();
 
   try {
+    // Si el usuario responde a una notificación de ticket y no tiene sesión activa,
+    // agregar el mensaje como comentario al ticket notificado.
+    const pending = getPendingReply(sessionKey);
+    if (pending && input) {
+      const session = getSession(sessionKey);
+      if (!session || session.state === STATES.IDLE) {
+        clearPendingReply(sessionKey);
+        await addCommentToTicket(pending.ticketId, input);
+        return `✅ Tu respuesta fue agregada al ticket *${pending.ref}*.\n\n_Escribí *hola* si necesitás algo más._`;
+      }
+    }
+
     let session = getSession(sessionKey);
 
     if (!session) {

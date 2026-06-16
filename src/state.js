@@ -104,4 +104,26 @@ function endSession(key) {
   });
 }
 
-module.exports = { STATES, getSession, wasSessionExpired, createSession, createPendingSession, updateSession, clearSession, endSession };
+// ── Respuestas pendientes a notificaciones ────────────────────────────────────
+// Cuando el bot notifica al usuario sobre un ticket, guarda el ticket temporalmente
+// para que la siguiente respuesta del usuario se agregue como comentario.
+
+const pendingReplies = new Map();
+const REPLY_TTL_MS = 30 * 60 * 1000; // 30 minutos
+
+function setPendingReply(phone, ticketId, ref) {
+  pendingReplies.set(phone, { ticketId, ref, expiresAt: Date.now() + REPLY_TTL_MS });
+}
+
+function getPendingReply(phone) {
+  const entry = pendingReplies.get(phone);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { pendingReplies.delete(phone); return null; }
+  return entry;
+}
+
+function clearPendingReply(phone) {
+  pendingReplies.delete(phone);
+}
+
+module.exports = { STATES, getSession, wasSessionExpired, createSession, createPendingSession, updateSession, clearSession, endSession, setPendingReply, getPendingReply, clearPendingReply };

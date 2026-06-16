@@ -3,7 +3,7 @@ const express = require('express');
 const axios = require('axios');
 const { Mutex } = require('async-mutex');
 const { handleMessage } = require('./flow');
-const { getSession } = require('./state');
+const { getSession, setPendingReply } = require('./state');
 const { getTicketDetail, getCallerForTicket } = require('./itop');
 
 const VERIFY_TOKEN    = process.env.VERIFY_TOKEN;
@@ -281,6 +281,7 @@ async function processItopNotification(body) {
 
   console.log(`[notify] Enviando notificación de ${ref} a ${to}`);
   await sendMessage(to, msg);
+  setPendingReply(to, ticketId, ref);
 }
 
 app.listen(PORT, () => {
