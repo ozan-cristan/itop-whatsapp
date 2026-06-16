@@ -372,13 +372,15 @@ async function getCallerForTicket(ticketId) {
 /**
  * Agrega un comentario público a un ticket existente.
  */
-async function addCommentToTicket(ticketId, comment) {
+// isPrivate=true escribe en private_log (visible solo para agentes, no dispara el webhook de iTop)
+async function addCommentToTicket(ticketId, comment, isPrivate = false) {
+  const logField = isPrivate ? 'private_log' : 'public_log';
   await itopRequest('core/update', {
     class: 'UserRequest',
     key: `SELECT UserRequest WHERE id = ${ticketId}`,
     comment: 'Comentario agregado via WhatsApp Bot',
     fields: {
-      public_log: {
+      [logField]: {
         add_item: {
           message: comment,
           format: 'text',
