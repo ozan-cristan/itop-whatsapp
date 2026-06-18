@@ -175,7 +175,7 @@ async function handleMessage(sessionKey, text, attachment = null) {
     const pending = getPendingReply(sessionKey);
     if (pending && input) {
       const session = getSession(sessionKey);
-      if (!session || session.state === STATES.IDLE) {
+      if (!session || session.state === STATES.IDLE || session.state === STATES.MAIN_MENU) {
         clearPendingReply(sessionKey);
         await addCommentToTicket(pending.ticketId, input, true); // private_log: no dispara el webhook de iTop
         return `✅ Tu respuesta fue agregada al ticket *${pending.ref}*.\n\n_Escribí *hola* si necesitás algo más._`;
