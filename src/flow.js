@@ -5,11 +5,14 @@ const {
   getSubcategoriesForService,
   createUserRequest, attachToTicket,
   getTicketsForPerson,
+  getResolvedTicketsForPerson,
   getTicketDetail, addCommentToTicket,
 } = require('./itop');
 
 
 const TRIGGER_WORDS = ['hola', 'inicio', 'ticket', 'ayuda', 'help', 'start'];
+// Palabras que cierran el modo conversación con ticket
+const EXIT_KEYWORDS = [...TRIGGER_WORDS, 'menu', 'salir', 'fin', 'salir_conv'];
 
 const GARANTIA_URL = process.env.GARANTIA_URL || '';
 
@@ -43,7 +46,8 @@ async function buildMainMenu(sessionKey, headerText) {
   const rows = [
     ...services.map((s, i) => ({ id: `sel_${i}`, title: s.name.slice(0, 24) })),
     { id: 'seguimiento', title: '📋 Seguimiento' },
-    { id: 'garantia',   title: '📄 Políticas de garantía' },
+    { id: 'cerrados',    title: '📁 Resueltos' },
+    { id: 'garantia',    title: '📄 Políticas de garantía' },
     { id: 'salir',       title: '👋 Salir' },
   ];
   return withList(headerText || `👋 Hola *${name}*. ¿Qué necesitás?`, rows);
@@ -89,11 +93,22 @@ const MSG = {
     [...subcats.map((s, i) => ({ id: `sel_${i}`, title: s.name.slice(0, 24) })), CANCEL_ROW]
   ),
 
-  ASK_SKU:            withCancel('🏷️ Ingresá el *SKU* o código del producto (si aplica):\n\n_Escribí *omitir* si no corresponde._\n_Escribí *cancelar* para volver al menú._'),
-  ASK_CUSTOMER_NAME:  withCancel('👤 *Paso 1 de 4* — Ingresá el *nombre y apellido* del cliente:\n\n_Escribí *cancelar* para volver al menú._'),
+  ASK_SKU:            withCancel('🏷️ Ingresá el *SKU o código del producto que figura en el packaging* (si aplica):\n\n_Escribí *omitir* si no corresponde._\n_Escribí *cancelar* para volver al menú._'),
+  ASK_CUSTOMER_NAME:  withCancel('👤 *Paso 1 de 4* — Ingresá el *nombre y apellido del consumidor final*:\n\n_Escribí *cancelar* para volver al menú._'),
   ASK_CUSTOMER_EMAIL: withCancel('📧 *Paso 2 de 4* — Ingresá el *correo electrónico* del cliente:\n\n_Escribí *cancelar* para volver al menú._'),
-  ASK_MOBILE:         withCancel('📱 *Paso 3 de 4* — Ingresá el *número móvil* del cliente:\n\n_Escribí *cancelar* para volver al menú._'),
+  ASK_MOBILE:         withCancel('📱 *Paso 3 de 4* — Ingresá el *número móvil* del cliente:\n\n⚠️ Sin el *0* de área y sin el *15*.\nEjemplo: `341 781-3171`\n(no `0341 15-781-3171`)\n\n_Escribí *cancelar* para volver al menú._'),
   ASK_DESC:           '📄 *Paso 4 de 4* — Ingresá la *descripción* del problema:\n\n_Escribí *cancelar* para volver al menú._',
+
+  MOBILE_INVALID_0: withCancel(
+    '⚠️ *No incluyas el 0* al inicio del código de área.\n\n' +
+    'Ejemplo correcto: `341 781-3171`\n(no `0341 781-3171`)\n\n' +
+    '_Volvé a ingresarlo, o escribí *cancelar* para volver al menú._'
+  ),
+  MOBILE_INVALID_15: withCancel(
+    '⚠️ *No incluyas el 15* del celular.\n\n' +
+    'Ejemplo correcto: `341 781-3171`\n(no `0341 15-781-3171`)\n\n' +
+    '_Volvé a ingresarlo, o escribí *cancelar* para volver al menú._'
+  ),
 
   CONFIRM_TICKET: (serviceName, subcatName, sku, customerName, customerEmail, numeroMovil, desc) => {
     let msg = `📋 *Resumen de tu solicitud*\n\n`;
@@ -128,7 +143,20 @@ const MSG = {
       };
     });
     rows.push(CANCEL_ROW);
-    return withList('📋 Tus solicitudes:', rows, 'Seleccionar');
+    return withList('📋 Tus solicitudes activas:', rows, 'Seleccionar');
+  },
+
+  SHOW_RESOLVED_TICKETS: (tickets) => {
+    const rows = tickets.map((t, i) => {
+      const emoji = STATUS_EMOJI[t.status] || '⚪';
+      return {
+        id: `sel_${i}`,
+        title: `${emoji} ${t.ref}`.slice(0, 24),
+        description: t.title.slice(0, 72),
+      };
+    });
+    rows.push(CANCEL_ROW);
+    return withList('📁 Tus requerimientos resueltos:', rows, 'Seleccionar');
   },
 
   TICKET_DETAIL: (d) => {
@@ -171,14 +199,22 @@ async function handleMessage(sessionKey, text, attachment = null) {
 
   try {
     // Si el usuario responde a una notificación de ticket y no tiene sesión activa,
-    // agregar el mensaje como comentario al ticket notificado.
+    // mantener la conversación con ese ticket hasta que el usuario salga explícitamente.
     const pending = getPendingReply(sessionKey);
     if (pending && input) {
       const session = getSession(sessionKey);
       if (!session || session.state === STATES.IDLE || session.state === STATES.MAIN_MENU) {
+        if (!EXIT_KEYWORDS.includes(input.toLowerCase())) {
+          // Agregar el mensaje al log del ticket sin borrar el pending reply,
+          // para que mensajes subsiguientes también queden registrados.
+          await addCommentToTicket(pending.ticketId, input, true);
+          return withButtons(
+            `✅ Mensaje agregado al ticket *${pending.ref}*.\n\nPodés seguir escribiendo para continuar la conversación.`,
+            [{ id: 'salir_conv', label: '🏠 Ir al menú' }]
+          );
+        }
+        // Palabra de salida: borrar pending reply y continuar al flujo normal
         clearPendingReply(sessionKey);
-        await addCommentToTicket(pending.ticketId, input, true); // private_log: no dispara el webhook de iTop
-        return `✅ Tu respuesta fue agregada al ticket *${pending.ref}*.\n\n_Escribí *hola* si necesitás algo más._`;
       }
     }
 
@@ -223,8 +259,14 @@ async function handleMessage(sessionKey, text, attachment = null) {
         if (input === 'seguimiento') {
           const tickets = await getTicketsForPerson(session.person.id);
           if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés solicitudes activas.\n\n¿Qué querés hacer?');
-          updateSession(sessionKey, { state: STATES.TICKET_LIST, tickets });
+          updateSession(sessionKey, { state: STATES.TICKET_LIST, tickets, ticketListType: 'active' });
           return MSG.SHOW_TICKETS(tickets);
+        }
+        if (input === 'cerrados') {
+          const tickets = await getResolvedTicketsForPerson(session.person.id);
+          if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés requerimientos resueltos.\n\n¿Qué querés hacer?');
+          updateSession(sessionKey, { state: STATES.CLOSED_TICKET_LIST, tickets, ticketListType: 'resolved' });
+          return MSG.SHOW_RESOLVED_TICKETS(tickets);
         }
         if (input === 'garantia') {
           const menu = await buildMainMenu(sessionKey, '¿Qué más necesitás?');
@@ -259,9 +301,24 @@ async function handleMessage(sessionKey, text, attachment = null) {
         return MSG.TICKET_DETAIL(detail);
       }
 
+      case STATES.CLOSED_TICKET_LIST: {
+        const idx = parseSelectionIndex(input);
+        if (idx < 0 || idx >= session.tickets.length) return MSG.SHOW_RESOLVED_TICKETS(session.tickets);
+        const ticket = session.tickets[idx];
+        const detail = await getTicketDetail(ticket.id);
+        updateSession(sessionKey, { state: STATES.TICKET_DETAIL_MENU, viewedTicketId: ticket.id, viewedTicketRef: ticket.ref });
+        return MSG.TICKET_DETAIL(detail);
+      }
+
       case STATES.TICKET_DETAIL_MENU: {
         if (input === '1') return buildMainMenu(sessionKey);
         if (input === '2') {
+          if (session.ticketListType === 'resolved') {
+            const tickets = await getResolvedTicketsForPerson(session.person.id);
+            if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés requerimientos resueltos.\n\n¿Qué querés hacer?');
+            updateSession(sessionKey, { state: STATES.CLOSED_TICKET_LIST, tickets });
+            return MSG.SHOW_RESOLVED_TICKETS(tickets);
+          }
           const tickets = await getTicketsForPerson(session.person.id);
           if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés solicitudes activas.\n\n¿Qué querés hacer?');
           updateSession(sessionKey, { state: STATES.TICKET_LIST, tickets });
@@ -314,6 +371,11 @@ async function handleMessage(sessionKey, text, attachment = null) {
 
       case STATES.AWAIT_MOBILE: {
         if (!input) return MSG.ASK_MOBILE;
+        const digits = input.replace(/\D/g, '');
+        // Detectar 0 inicial de código de área (ej. 0341 → debe ser 341)
+        if (digits.startsWith('0')) return MSG.MOBILE_INVALID_0;
+        // Detectar 15 incluido en el número (ej. 34115781371 → debe ser 3417813171)
+        if (/^\d{2,4}15\d{6,8}$/.test(digits)) return MSG.MOBILE_INVALID_15;
         updateSession(sessionKey, { state: STATES.AWAIT_DESC, numeroMovil: input });
         return withCancel(MSG.ASK_DESC);
       }
