@@ -1,6 +1,6 @@
-const { STATES, getSession, wasSessionExpired, createPendingSession, updateSession, clearSession, endSession, getPendingReply, clearPendingReply } = require('./state');
+const { STATES, getSession, wasSessionExpired, createSession, createPendingSession, updateSession, clearSession, endSession, getPendingReply, clearPendingReply } = require('./state');
 const {
-  findPersonByCuil,
+  findPersonByMobile, findPersonByCuil,
   getServicesForOrg,
   getSubcategoriesForService,
   createUserRequest, attachToTicket,
@@ -213,8 +213,21 @@ async function handleMessage(sessionKey, text, attachment = null) {
             [{ id: 'salir_conv', label: '🏠 Ir al menú' }]
           );
         }
-        // Palabra de salida: borrar pending reply y continuar al flujo normal
+        // Palabra de salida: borrar pending reply e intentar ir directo al menú
         clearPendingReply(sessionKey);
+        // Si ya hay sesión con persona, ir al menú sin pedir CUIT
+        if (session?.person) return buildMainMenu(sessionKey);
+        // Sin sesión: buscar la persona por número de WhatsApp (mobile_phone en iTop)
+        try {
+          const person = await findPersonByMobile(sessionKey);
+          if (person) {
+            createSession(sessionKey, person);
+            return buildMainMenu(sessionKey);
+          }
+        } catch (err) {
+          console.error('[flow:pending_exit] Error buscando persona por móvil:', err.message);
+        }
+        // Si no se encontró la persona, pedir CUIT normalmente (fall through)
       }
     }
 
