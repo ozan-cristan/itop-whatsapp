@@ -205,15 +205,17 @@ async function handleMessage(sessionKey, text, attachment = null) {
       const session = getSession(sessionKey);
       if (!session || session.state === STATES.IDLE || session.state === STATES.MAIN_MENU) {
         if (!EXIT_KEYWORDS.includes(input.toLowerCase())) {
-          // Agregar el mensaje al log del ticket sin borrar el pending reply,
-          // para que mensajes subsiguientes también queden registrados.
           await addCommentToTicket(pending.ticketId, input, true);
-          // Refrescar lastActivity para que la sesión no expire durante la conversación
           if (session) updateSession(sessionKey, {});
-          return withButtons(
-            `✅ Mensaje agregado al ticket *${pending.ref}*.\n\nPodés seguir escribiendo para continuar la conversación.`,
-            [{ id: 'salir_conv', label: '🏠 Ir al menú' }]
-          );
+          // Solo confirmar el primer mensaje; los siguientes se agregan en silencio
+          if (!pending.confirmed) {
+            pending.confirmed = true;
+            return withButtons(
+              `✅ Mensaje agregado al ticket *${pending.ref}*.\n\nPodés seguir escribiendo. Cuando termines, tocá el botón.`,
+              [{ id: 'salir_conv', label: '🏠 Ir al menú' }]
+            );
+          }
+          return null;
         }
         // Palabra de salida: borrar pending reply e ir al menú
         clearPendingReply(sessionKey);
