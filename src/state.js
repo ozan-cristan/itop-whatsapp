@@ -116,8 +116,8 @@ function endSession(key) {
 const pendingReplies = new Map();
 const REPLY_TTL_MS = 30 * 60 * 1000; // 30 minutos
 
-function setPendingReply(phone, ticketId, ref) {
-  pendingReplies.set(phone, { ticketId, ref, expiresAt: Date.now() + REPLY_TTL_MS });
+function setPendingReply(phone, ticketId, ref, callerPhone = null) {
+  pendingReplies.set(phone, { ticketId, ref, callerPhone, expiresAt: Date.now() + REPLY_TTL_MS });
 }
 
 function getPendingReply(phone) {

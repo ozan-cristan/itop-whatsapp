@@ -282,7 +282,7 @@ async function processItopNotification(body) {
       msg += `💬 ${text}\n\n`;
     }
     msg += '_Podés responder escribiendo directamente aquí o consultá el estado desde el menú._';
-    setPendingReply(to, ticketId, ref);
+    setPendingReply(to, ticketId, ref, caller.phone);
   }
 
   console.log(`[notify] Enviando notificación ${type} de ${ref} a ${to}`);

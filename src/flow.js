@@ -208,18 +208,22 @@ async function handleMessage(sessionKey, text, attachment = null) {
           // Agregar el mensaje al log del ticket sin borrar el pending reply,
           // para que mensajes subsiguientes también queden registrados.
           await addCommentToTicket(pending.ticketId, input, true);
+          // Refrescar lastActivity para que la sesión no expire durante la conversación
+          if (session) updateSession(sessionKey, {});
           return withButtons(
             `✅ Mensaje agregado al ticket *${pending.ref}*.\n\nPodés seguir escribiendo para continuar la conversación.`,
             [{ id: 'salir_conv', label: '🏠 Ir al menú' }]
           );
         }
-        // Palabra de salida: borrar pending reply e intentar ir directo al menú
+        // Palabra de salida: borrar pending reply e ir al menú
         clearPendingReply(sessionKey);
         // Si ya hay sesión con persona, ir al menú sin pedir CUIT
         if (session?.person) return buildMainMenu(sessionKey);
-        // Sin sesión: buscar la persona por número de WhatsApp (mobile_phone en iTop)
+        // Sin sesión: buscar la persona usando el teléfono exacto que tiene iTop
+        // (pending.callerPhone conserva el formato original, p.ej. "+54 9 341 6230202")
         try {
-          const person = await findPersonByMobile(sessionKey);
+          const searchPhone = pending.callerPhone || sessionKey;
+          const person = await findPersonByMobile(searchPhone);
           if (person) {
             createSession(sessionKey, person);
             return buildMainMenu(sessionKey);
@@ -227,7 +231,9 @@ async function handleMessage(sessionKey, text, attachment = null) {
         } catch (err) {
           console.error('[flow:pending_exit] Error buscando persona por móvil:', err.message);
         }
-        // Si no se encontró la persona, pedir CUIT normalmente (fall through)
+        // No se pudo recuperar la sesión — pedir CUIT explícitamente
+        createPendingSession(sessionKey);
+        return MSG.ASK_PHONE;
       }
     }
 
