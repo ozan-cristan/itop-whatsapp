@@ -66,7 +66,7 @@
           <type>Overload-DBObject</type>
           <code><![CDATA[	public function GetAttributeFlags($sAttCode, &$aReasons = array(), $sTargetState = '')
 	{
-		if ($sAttCode == 'public_log' && !UserRights::IsAdministrator())
+		if ($sAttCode == 'private_log' && !UserRights::IsAdministrator())
 		{
 			static $bRestricted = null;
 			if ($bRestricted === null)
@@ -102,7 +102,7 @@
           <type>Overload-DBObject</type>
           <code><![CDATA[	public function GetInitialStateAttributeFlags($sAttCode, &$aReasons = array())
 	{
-		if ($sAttCode == 'public_log' && !UserRights::IsAdministrator())
+		if ($sAttCode == 'private_log' && !UserRights::IsAdministrator())
 		{
 			static $bRestricted = null;
 			if ($bRestricted === null)
