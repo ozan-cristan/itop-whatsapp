@@ -392,4 +392,48 @@ async function addCommentToTicket(ticketId, comment, isPrivate = false) {
   });
 }
 
-module.exports = { findPersonByMobile, findPersonByCuil, getFamiliesForOrg, getServicesForOrgAndFamily, getServicesForOrg, getSubcategoriesForService, getTemplateForSubcategory, createUserRequest, attachToTicket, getTicketsForPerson, getResolvedTicketsForPerson, getTicketDetail, getCallerForTicket, addCommentToTicket };
+/**
+ * Extrae las imágenes embebidas (InlineImage de iTop) de un HTML de bitácora.
+ * Detecta las imágenes propias de iTop por su atributo data-img-id="N" o por el
+ * src .../download_inlineimage?id=N y trae el binario de cada una por REST.
+ * Retorna array de { data(base64), mimetype, filename }. Best-effort: ante error
+ * en una imagen la omite y sigue. No incluye imágenes externas ni data:base64.
+ */
+async function getInlineImagesFromHtml(html) {
+  if (!html || typeof html !== 'string') return [];
+
+  // Recolectar ids únicos de InlineImage referenciados en el HTML
+  const ids = new Set();
+  let m;
+  const reDataId = /data-img-id="(\d+)"/gi;
+  while ((m = reDataId.exec(html)) !== null) ids.add(m[1]);
+  const reSrcId = /download_inlineimage[^"']*?[?&]id=(\d+)/gi;
+  while ((m = reSrcId.exec(html)) !== null) ids.add(m[1]);
+
+  if (ids.size === 0) return [];
+
+  const images = [];
+  for (const id of ids) {
+    try {
+      const result = await itopRequest('core/get', {
+        class: 'InlineImage',
+        key: `SELECT InlineImage WHERE id = ${id}`,
+        output_fields: 'contents',
+      });
+      const obj = result.objects && Object.values(result.objects)[0];
+      const blob = obj?.fields?.contents;
+      if (blob?.data && typeof blob.mimetype === 'string' && blob.mimetype.startsWith('image/')) {
+        images.push({
+          data: blob.data,
+          mimetype: blob.mimetype,
+          filename: blob.filename || `imagen-${id}`,
+        });
+      }
+    } catch (err) {
+      console.error(`[itop] No se pudo traer InlineImage ${id}:`, err.message);
+    }
+  }
+  return images;
+}
+
+module.exports = { findPersonByMobile, findPersonByCuil, getFamiliesForOrg, getServicesForOrgAndFamily, getServicesForOrg, getSubcategoriesForService, getTemplateForSubcategory, createUserRequest, attachToTicket, getTicketsForPerson, getResolvedTicketsForPerson, getTicketDetail, getCallerForTicket, addCommentToTicket, getInlineImagesFromHtml };

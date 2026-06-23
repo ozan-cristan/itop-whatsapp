@@ -4,7 +4,7 @@ const axios = require('axios');
 const { Mutex } = require('async-mutex');
 const { handleMessage } = require('./flow');
 const { getSession, setPendingReply } = require('./state');
-const { getTicketDetail, getCallerForTicket } = require('./itop');
+const { getTicketDetail, getCallerForTicket, getInlineImagesFromHtml } = require('./itop');
 
 const VERIFY_TOKEN    = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN  = process.env.WHATSAPP_TOKEN;
@@ -158,6 +158,64 @@ async function sendMessage(to, response) {
   }
 }
 
+// ── Envío de imágenes a WhatsApp (iTop → cliente) ────────────────────────────
+const META_MEDIA_URL = `https://graph.facebook.com/v22.0/${PHONE_NUMBER_ID}/media`;
+const WHATSAPP_MAX_IMAGE_BYTES = 5 * 1024 * 1024; // límite de imagen de la API de Meta
+
+// Sube un binario a Meta y devuelve el media_id (usa fetch/FormData/Blob nativos de Node 18+)
+async function uploadMediaToMeta(base64, mimetype, filename) {
+  const buffer = Buffer.from(base64, 'base64');
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', mimetype);
+  form.append('file', new Blob([buffer], { type: mimetype }), filename);
+
+  const res = await fetch(META_MEDIA_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+    body: form,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.id) {
+    throw new Error(`upload media HTTP ${res.status}: ${JSON.stringify(data)}`);
+  }
+  return data.id;
+}
+
+// Envía un mensaje de tipo imagen (por media_id previamente subido)
+async function sendImage(to, mediaId, caption) {
+  const image = { id: mediaId };
+  if (caption) image.caption = caption.slice(0, 1024);
+  await axios.post(META_MESSAGES_URL, { messaging_product: 'whatsapp', to, type: 'image', image }, { headers: META_HEADERS });
+}
+
+// Extrae las imágenes embebidas de un HTML de bitácora y las envía al cliente.
+// Best-effort: cualquier fallo se loguea y no interrumpe (el texto ya se envió).
+async function sendLogImages(to, html) {
+  let images;
+  try {
+    images = await getInlineImagesFromHtml(html);
+  } catch (err) {
+    console.error('[notify] Error obteniendo imágenes de la bitácora:', err.message);
+    return;
+  }
+  for (const img of images) {
+    const approxBytes = Math.ceil((img.data.length * 3) / 4);
+    if (approxBytes > WHATSAPP_MAX_IMAGE_BYTES) {
+      console.warn(`[notify] Imagen ${img.filename} (~${Math.round(approxBytes / 1024)}KB) supera el límite de WhatsApp, se omite`);
+      continue;
+    }
+    try {
+      const mediaId = await uploadMediaToMeta(img.data, img.mimetype, img.filename);
+      await sendImage(to, mediaId);
+      console.log(`[notify] Imagen de bitácora enviada: ${img.filename} (${img.mimetype})`);
+    } catch (err) {
+      const detail = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+      console.error(`[notify] No se pudo enviar la imagen ${img.filename}:`, detail);
+    }
+  }
+}
+
 function buildPayload(to, response) {
   const base = { messaging_product: 'whatsapp', to };
 
@@ -266,6 +324,7 @@ async function processItopNotification(body) {
   const to = caller.phone.replace(/^\+/, '').replace(/\s/g, '');
 
   let msg;
+  let logHtml = null; // HTML de la última nota de bitácora (para extraer imágenes embebidas)
 
   if (type === 'resolved') {
     const solution = (body.solution || '').replace(/<[^>]+>/g, '').trim();
@@ -274,6 +333,7 @@ async function processItopNotification(body) {
     msg += '_Si el problema persiste, escribí *hola* para abrir un nuevo ticket._';
   } else {
     const detail = await getTicketDetail(ticketId);
+    logHtml = detail?.lastLogMessage || null;
     msg = `📋 *Actualización en tu ticket ${ref}*\n`;
     if (detail?.title) msg += `_${detail.title}_\n`;
     msg += '\n';
@@ -287,6 +347,9 @@ async function processItopNotification(body) {
 
   console.log(`[notify] Enviando notificación ${type} de ${ref} a ${to}`);
   await sendMessage(to, msg);
+
+  // Si la nota de bitácora trae imágenes embebidas, enviarlas después del texto
+  if (logHtml) await sendLogImages(to, logHtml);
 }
 
 app.listen(PORT, () => {
