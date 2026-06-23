@@ -356,7 +356,7 @@ async function handleMessage(sessionKey, text, attachment = null) {
         if (!input) return withCancel(MSG.ASK_COMMENT);
         const { viewedTicketId, viewedTicketRef } = session;
         try {
-          await addCommentToTicket(viewedTicketId, input);
+          await addCommentToTicket(viewedTicketId, input, true);
           updateSession(sessionKey, { viewedTicketId: null, viewedTicketRef: null });
           return buildMainMenu(sessionKey, `✅ Comentario agregado al ticket *${viewedTicketRef}*.\n\n¿Qué querés hacer ahora?`);
         } catch (err) {
