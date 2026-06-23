@@ -2,13 +2,13 @@
 
 Bot de WhatsApp para el sistema **iTop ITSM** que permite a los usuarios crear y gestionar tickets de soporte directamente desde WhatsApp, usando la **API oficial de WhatsApp Business de Meta**.
 
-> Esta rama usa la API oficial de Meta (webhook + Graph API). Para la versión con Baileys (WhatsApp Web no oficial), ver la rama [`main`](../../tree/main).
+> Implementación activa con la **API oficial de Meta** (webhook + Graph API): `src/bot.js` (`npm start`). El archivo `bot_baileys.js` conserva la implementación anterior con **Baileys** (WhatsApp Web no oficial); ambas comparten el mismo núcleo (`flow.js` / `itop.js` / `state.js`).
 
 ---
 
 ## Características
 
-- 🎫 Crear tickets (wizard guiado: familia → servicio → subcategoría → título → descripción)
+- 🎫 Crear tickets (wizard guiado: servicio → subcategoría → SKU → datos del cliente → descripción)
 - 📋 Consultar solicitudes activas y resueltas
 - 📎 Adjuntar archivos (imágenes, documentos, audio, video)
 - 💬 Agregar comentarios a tickets existentes
@@ -31,7 +31,7 @@ Bot de WhatsApp para el sistema **iTop ITSM** que permite a los usuarios crear y
 ## Instalación
 
 ```bash
-git clone -b feature/meta-api https://github.com/ozan-cristan/itop-whatsapp.git
+git clone https://github.com/ozan-cristan/itop-whatsapp.git
 cd itop-whatsapp
 npm install
 ```
@@ -128,18 +128,19 @@ WhatsApp del usuario
 ## Flujo de conversación
 
 ```
-Usuario escribe → bot pide CUIL → valida en iTop → muestra menú
-  1. Nueva solicitud  → selección de servicio → título → descripción → confirmar → adjuntos
-  2. Solicitudes activas → detalle → comentario
-  3. Solicitudes resueltas → detalle
-  4. Salir
+Usuario escribe → bot pide CUIT → valida en iTop → muestra menú
+  • Nueva solicitud  → servicio → subcategoría → SKU → nombre/email/móvil del cliente → descripción → confirmar → adjuntos
+  • 📋 Seguimiento (solicitudes activas) → detalle → comentar
+  • 📁 Resueltos → detalle
+  • 📄 Políticas de garantía
+  • 👋 Salir
 ```
 
 ---
 
 ## Diferencias respecto a la versión Baileys
 
-| Aspecto | Baileys (main) | Meta API (esta rama) |
+| Aspecto | Baileys (`bot_baileys.js`) | Meta API (`src/`, activa) |
 |---|---|---|
 | Autenticación | QR code | Token permanente |
 | Mensajes entrantes | Evento en tiempo real | Webhook HTTP |
