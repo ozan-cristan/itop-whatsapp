@@ -141,6 +141,11 @@ const MSG = {
     'Ejemplo correcto: `341 781-3171`\n(no `0341 15-781-3171`)\n\n' +
     '_Volvé a ingresarlo, o escribí *cancelar* para volver al menú._'
   ),
+  EMAIL_INVALID: withCancel(
+    '⚠️ El *correo electrónico* no tiene un formato válido.\n\n' +
+    'Ejemplo correcto: `nombre@dominio.com`\n\n' +
+    '_Volvé a ingresarlo, o escribí *cancelar* para volver al menú._'
+  ),
 
   CONFIRM_TICKET: (serviceName, subcatName, sku, customerName, customerEmail, numeroMovil, desc) => {
     let msg = `📋 *Resumen de tu solicitud*\n\n`;
@@ -221,6 +226,13 @@ function validateMobile(input) {
   if (digits.startsWith('0')) return MSG.MOBILE_INVALID_0;
   // Detectar 15 incluido en el número (ej. 34115781371 → debe ser 3417813171)
   if (/^\d{2,4}15\d{6,8}$/.test(digits)) return MSG.MOBILE_INVALID_15;
+  return null;
+}
+
+// ─── Helper: validar email ─────────────────────────────────────────────────────
+// Retorna el mensaje de error si el formato es inválido, o null si es válido.
+function validateEmail(input) {
+  if (!/^\S+@\S+\.\S+$/.test(input.trim())) return MSG.EMAIL_INVALID;
   return null;
 }
 
@@ -440,6 +452,8 @@ async function handleMessage(sessionKey, text, attachment = null) {
 
       case STATES.AWAIT_CUSTOMER_EMAIL: {
         if (!input) return MSG.ASK_CUSTOMER_EMAIL;
+        const emailError = validateEmail(input);
+        if (emailError) return emailError;
         updateSession(sessionKey, { state: STATES.AWAIT_MOBILE, customerEmail: input });
         return MSG.ASK_MOBILE;
       }
@@ -496,6 +510,10 @@ async function handleMessage(sessionKey, text, attachment = null) {
           if (field === 'numeroMovil') {
             const mobileError = validateMobile(input);
             if (mobileError) return mobileError;
+          }
+          if (field === 'customerEmail') {
+            const emailError = validateEmail(input);
+            if (emailError) return emailError;
           }
           updateSession(sessionKey, { [field]: input });
         }
