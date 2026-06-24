@@ -76,6 +76,38 @@ const STATUS_EMOJI = {
   dispatched: '🟡', escalated_tto: '🔴', escalated_ttr: '🔴', frozen: '❄️',
 };
 
+// ─── Helper: listado paginado de tickets ──────────────────────────────────────
+// WhatsApp limita las listas interactivas a 10 filas. Si hay más de 10 tickets,
+// se muestran de a 9 con una fila "Ver más" que avanza de página (cicla al final).
+// Hasta 10 tickets se muestran todos. La opción de cancelar va en el cuerpo del
+// mensaje (escribir "cancelar") para no gastar una fila.
+const TICKET_PAGE_SIZE = 9;
+
+function buildTicketList(headerBase, tickets, page = 0) {
+  const total = tickets.length;
+  const needsPaging = total > 10;
+  const size = needsPaging ? TICKET_PAGE_SIZE : 10;
+  const pages = Math.ceil(total / size) || 1;
+  const safePage = ((page % pages) + pages) % pages;
+  const start = safePage * size;
+  const slice = tickets.slice(start, start + size);
+
+  const rows = slice.map((t, i) => {
+    const emoji = STATUS_EMOJI[t.status] || '⚪';
+    return {
+      id: `sel_${start + i}`,
+      title: `${emoji} ${t.ref}`.slice(0, 24),
+      description: t.title.slice(0, 72),
+    };
+  });
+  if (needsPaging) rows.push({ id: 'ver_mas', title: '➕ Ver más solicitudes' });
+
+  let header = headerBase;
+  if (needsPaging) header += ` (página ${safePage + 1} de ${pages})`;
+  header += '\n\n_Escribí *cancelar* para volver al menú._';
+  return withList(header, rows, 'Seleccionar');
+}
+
 // ─── Mensajes ─────────────────────────────────────────────────────────────────
 
 const MSG = {
@@ -146,31 +178,9 @@ const MSG = {
     [{ id: 'no', label: '✔️ Terminar' }]
   ),
 
-  SHOW_TICKETS: (tickets) => {
-    const rows = tickets.map((t, i) => {
-      const emoji = STATUS_EMOJI[t.status] || '⚪';
-      return {
-        id: `sel_${i}`,
-        title: `${emoji} ${t.ref}`.slice(0, 24),
-        description: t.title.slice(0, 72),
-      };
-    });
-    rows.push(CANCEL_ROW);
-    return withList('📋 Tus solicitudes activas:', rows, 'Seleccionar');
-  },
+  SHOW_TICKETS: (tickets, page = 0) => buildTicketList('📋 Tus solicitudes activas:', tickets, page),
 
-  SHOW_RESOLVED_TICKETS: (tickets) => {
-    const rows = tickets.map((t, i) => {
-      const emoji = STATUS_EMOJI[t.status] || '⚪';
-      return {
-        id: `sel_${i}`,
-        title: `${emoji} ${t.ref}`.slice(0, 24),
-        description: t.title.slice(0, 72),
-      };
-    });
-    rows.push(CANCEL_ROW);
-    return withList('📁 Tus requerimientos resueltos:', rows, 'Seleccionar');
-  },
+  SHOW_RESOLVED_TICKETS: (tickets, page = 0) => buildTicketList('📁 Tus requerimientos resueltos:', tickets, page),
 
   TICKET_DETAIL: (d) => {
     const status = STATUS_LABELS[d.status] || d.status;
@@ -314,14 +324,14 @@ async function handleMessage(sessionKey, text, attachment = null) {
         if (input === 'seguimiento') {
           const tickets = await getTicketsForPerson(session.person.id);
           if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés solicitudes activas.\n\n¿Qué querés hacer?');
-          updateSession(sessionKey, { state: STATES.TICKET_LIST, tickets, ticketListType: 'active' });
-          return MSG.SHOW_TICKETS(tickets);
+          updateSession(sessionKey, { state: STATES.TICKET_LIST, tickets, ticketListType: 'active', ticketPage: 0 });
+          return MSG.SHOW_TICKETS(tickets, 0);
         }
         if (input === 'cerrados') {
           const tickets = await getResolvedTicketsForPerson(session.person.id);
           if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés requerimientos resueltos.\n\n¿Qué querés hacer?');
-          updateSession(sessionKey, { state: STATES.CLOSED_TICKET_LIST, tickets, ticketListType: 'resolved' });
-          return MSG.SHOW_RESOLVED_TICKETS(tickets);
+          updateSession(sessionKey, { state: STATES.CLOSED_TICKET_LIST, tickets, ticketListType: 'resolved', ticketPage: 0 });
+          return MSG.SHOW_RESOLVED_TICKETS(tickets, 0);
         }
         if (input === 'garantia') {
           const menu = await buildMainMenu(sessionKey, '¿Qué más necesitás?');
@@ -348,8 +358,13 @@ async function handleMessage(sessionKey, text, attachment = null) {
       }
 
       case STATES.TICKET_LIST: {
+        if (input === 'ver_mas') {
+          const page = (session.ticketPage || 0) + 1;
+          updateSession(sessionKey, { ticketPage: page });
+          return MSG.SHOW_TICKETS(session.tickets, page);
+        }
         const idx = parseSelectionIndex(input);
-        if (idx < 0 || idx >= session.tickets.length) return MSG.SHOW_TICKETS(session.tickets);
+        if (idx < 0 || idx >= session.tickets.length) return MSG.SHOW_TICKETS(session.tickets, session.ticketPage || 0);
         const ticket = session.tickets[idx];
         const detail = await getTicketDetail(ticket.id);
         updateSession(sessionKey, { state: STATES.TICKET_DETAIL_MENU, viewedTicketId: ticket.id, viewedTicketRef: ticket.ref });
@@ -357,8 +372,13 @@ async function handleMessage(sessionKey, text, attachment = null) {
       }
 
       case STATES.CLOSED_TICKET_LIST: {
+        if (input === 'ver_mas') {
+          const page = (session.ticketPage || 0) + 1;
+          updateSession(sessionKey, { ticketPage: page });
+          return MSG.SHOW_RESOLVED_TICKETS(session.tickets, page);
+        }
         const idx = parseSelectionIndex(input);
-        if (idx < 0 || idx >= session.tickets.length) return MSG.SHOW_RESOLVED_TICKETS(session.tickets);
+        if (idx < 0 || idx >= session.tickets.length) return MSG.SHOW_RESOLVED_TICKETS(session.tickets, session.ticketPage || 0);
         const ticket = session.tickets[idx];
         const detail = await getTicketDetail(ticket.id);
         updateSession(sessionKey, { state: STATES.TICKET_DETAIL_MENU, viewedTicketId: ticket.id, viewedTicketRef: ticket.ref });
@@ -371,13 +391,13 @@ async function handleMessage(sessionKey, text, attachment = null) {
           if (session.ticketListType === 'resolved') {
             const tickets = await getResolvedTicketsForPerson(session.person.id);
             if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés requerimientos resueltos.\n\n¿Qué querés hacer?');
-            updateSession(sessionKey, { state: STATES.CLOSED_TICKET_LIST, tickets });
-            return MSG.SHOW_RESOLVED_TICKETS(tickets);
+            updateSession(sessionKey, { state: STATES.CLOSED_TICKET_LIST, tickets, ticketPage: 0 });
+            return MSG.SHOW_RESOLVED_TICKETS(tickets, 0);
           }
           const tickets = await getTicketsForPerson(session.person.id);
           if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés solicitudes activas.\n\n¿Qué querés hacer?');
-          updateSession(sessionKey, { state: STATES.TICKET_LIST, tickets });
-          return MSG.SHOW_TICKETS(tickets);
+          updateSession(sessionKey, { state: STATES.TICKET_LIST, tickets, ticketPage: 0 });
+          return MSG.SHOW_TICKETS(tickets, 0);
         }
         if (input === '3') {
           updateSession(sessionKey, { state: STATES.AWAIT_COMMENT });
