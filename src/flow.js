@@ -86,10 +86,25 @@ const TICKET_PAGE_SIZE = 9;
 function buildTicketList(headerBase, tickets, page = 0) {
   const total = tickets.length;
 
-  // Lista seleccionable nativa de WhatsApp para todos los tamaños.
-  // Hasta 10 entran en una sola página; si supera 10 se pagina de a 9 con
-  // una fila "Ver más". (WhatsApp colapsa la lista tras el botón "Seleccionar";
-  // no es posible mostrarla ya expandida.)
+  // 1 a 3 tickets: botones inline directos (única forma en WhatsApp de mostrar
+  // las opciones sin el toque extra en "Seleccionar"; el límite es 3 botones).
+  // El cuerpo lista ref + título para dar contexto de cada botón.
+  if (total <= 3) {
+    const buttons = tickets.map((t, i) => ({
+      id: `sel_${i}`,
+      label: `${STATUS_EMOJI[t.status] || '⚪'} ${t.ref}`.slice(0, 20),
+    }));
+    const detail = tickets.map((t) => {
+      const emoji = STATUS_EMOJI[t.status] || '⚪';
+      return `${emoji} *${t.ref}* — ${t.title.slice(0, 60)}`;
+    }).join('\n');
+    const body = `${headerBase}\n\n${detail}\n\n_Tocá un botón para abrir, o escribí *cancelar* para volver al menú._`;
+    return withButtons(body, buttons);
+  }
+
+  // 4 o más: lista seleccionable nativa de WhatsApp. Hasta 10 en una sola
+  // página; si supera 10 se pagina de a 9 con una fila "Ver más". (WhatsApp
+  // colapsa la lista tras "Seleccionar"; no es posible mostrarla expandida.)
   const needsPaging = total > 10;
   const size = needsPaging ? TICKET_PAGE_SIZE : 10;
   const pages = Math.ceil(total / size) || 1;
