@@ -85,6 +85,19 @@ const TICKET_PAGE_SIZE = 9;
 
 function buildTicketList(headerBase, tickets, page = 0) {
   const total = tickets.length;
+
+  // Listas chicas (< 10): mostrar el listado directamente como texto numerado,
+  // así el usuario lo ve de una y responde con el número (un paso menos que la
+  // lista interactiva, que queda colapsada detrás del botón "Seleccionar").
+  if (total < 10) {
+    const lines = tickets.map((t, i) => {
+      const emoji = STATUS_EMOJI[t.status] || '⚪';
+      return `*${i + 1}.* ${emoji} ${t.ref} — ${t.title.slice(0, 60)}`;
+    }).join('\n');
+    return `${headerBase}\n\n${lines}\n\n_Respondé con el *número* del ticket, o escribí *cancelar* para volver al menú._`;
+  }
+
+  // 10 o más: lista interactiva (con paginación si supera 10).
   const needsPaging = total > 10;
   const size = needsPaging ? TICKET_PAGE_SIZE : 10;
   const pages = Math.ceil(total / size) || 1;
