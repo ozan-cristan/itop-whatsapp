@@ -124,6 +124,19 @@ const MSG = {
   },
   INVALID_CONFIRM: '⚠️ Respondé *1* para confirmar o *2* para modificar datos.',
 
+  ASK_FIELD_TO_EDIT: (session) => {
+    const fmt = (v) => (v ? String(v).slice(0, 40) : '—');
+    const rows = [
+      { id: 'edit_sku',         title: '🏷️ SKU',          description: fmt(session.sku) },
+      { id: 'edit_name',        title: '👤 Nombre',        description: fmt(session.customerName) },
+      { id: 'edit_email',       title: '📧 Email',         description: fmt(session.customerEmail) },
+      { id: 'edit_mobile',      title: '📱 Móvil',         description: fmt(session.numeroMovil) },
+      { id: 'edit_description', title: '📄 Descripción',   description: fmt(session.description) },
+      CANCEL_ROW,
+    ];
+    return withList('✏️ ¿Qué dato querés modificar?', rows, 'Elegir campo');
+  },
+
   ASK_ATTACHMENT: (ref) => withButtons(
     `✅ Ticket *${ref}* creado.\n\n📎 Enviá un archivo para adjuntar, o tocá el botón para continuar sin adjunto.`,
     [{ id: 'no', label: '✔️ Sin adjunto' }]
@@ -179,6 +192,27 @@ const MSG = {
 
   ERROR: '⚠️ Ocurrió un error al procesar tu solicitud. Intentá nuevamente.',
 };
+
+// ─── Edición de campos: selección → metadatos del campo ────────────────────────
+// field: clave en la sesión; ask: mensaje para pedir el nuevo valor.
+const EDITABLE_FIELDS = {
+  edit_sku:         { field: 'sku',           ask: () => MSG.ASK_SKU },
+  edit_name:        { field: 'customerName',  ask: () => MSG.ASK_CUSTOMER_NAME },
+  edit_email:       { field: 'customerEmail', ask: () => MSG.ASK_CUSTOMER_EMAIL },
+  edit_mobile:      { field: 'numeroMovil',   ask: () => MSG.ASK_MOBILE },
+  edit_description: { field: 'description',   ask: () => withCancel(MSG.ASK_DESC) },
+};
+
+// ─── Helper: validar móvil ─────────────────────────────────────────────────────
+// Retorna el mensaje de error correspondiente, o null si el número es válido.
+function validateMobile(input) {
+  const digits = input.replace(/\D/g, '');
+  // Detectar 0 inicial de código de área (ej. 0341 → debe ser 341)
+  if (digits.startsWith('0')) return MSG.MOBILE_INVALID_0;
+  // Detectar 15 incluido en el número (ej. 34115781371 → debe ser 3417813171)
+  if (/^\d{2,4}15\d{6,8}$/.test(digits)) return MSG.MOBILE_INVALID_15;
+  return null;
+}
 
 // ─── Helper: ir al paso de SKU ────────────────────────────────────────────────
 
@@ -392,11 +426,8 @@ async function handleMessage(sessionKey, text, attachment = null) {
 
       case STATES.AWAIT_MOBILE: {
         if (!input) return MSG.ASK_MOBILE;
-        const digits = input.replace(/\D/g, '');
-        // Detectar 0 inicial de código de área (ej. 0341 → debe ser 341)
-        if (digits.startsWith('0')) return MSG.MOBILE_INVALID_0;
-        // Detectar 15 incluido en el número (ej. 34115781371 → debe ser 3417813171)
-        if (/^\d{2,4}15\d{6,8}$/.test(digits)) return MSG.MOBILE_INVALID_15;
+        const mobileError = validateMobile(input);
+        if (mobileError) return mobileError;
         updateSession(sessionKey, { state: STATES.AWAIT_DESC, numeroMovil: input });
         return withCancel(MSG.ASK_DESC);
       }
@@ -417,10 +448,44 @@ async function handleMessage(sessionKey, text, attachment = null) {
           return MSG.ASK_ATTACHMENT(ticket.ref);
         }
         if (['2', 'no'].includes(input.toLowerCase())) {
-          updateSession(sessionKey, { state: STATES.AWAIT_SKU, sku: null, customerName: null, customerEmail: null, numeroMovil: null, title: null, description: null });
-          return MSG.ASK_SKU;
+          updateSession(sessionKey, { state: STATES.EDIT_FIELD_SELECT });
+          return MSG.ASK_FIELD_TO_EDIT(session);
         }
         return MSG.INVALID_CONFIRM;
+      }
+
+      case STATES.EDIT_FIELD_SELECT: {
+        const meta = EDITABLE_FIELDS[input];
+        if (!meta) return MSG.ASK_FIELD_TO_EDIT(session);
+        updateSession(sessionKey, { state: STATES.EDIT_FIELD_VALUE, editingField: meta.field });
+        return meta.ask();
+      }
+
+      case STATES.EDIT_FIELD_VALUE: {
+        const field = session.editingField;
+        // SKU es opcional: permite omitir para dejarlo vacío.
+        if (field === 'sku') {
+          const skuValue = ['omitir', 'skip', 'no'].includes(input.toLowerCase()) ? null : input || null;
+          updateSession(sessionKey, { sku: skuValue });
+        } else {
+          if (!input) {
+            // Re-pedir el mismo campo si llega vacío.
+            const entry = Object.values(EDITABLE_FIELDS).find((m) => m.field === field);
+            return entry ? entry.ask() : MSG.ASK_FIELD_TO_EDIT(session);
+          }
+          if (field === 'numeroMovil') {
+            const mobileError = validateMobile(input);
+            if (mobileError) return mobileError;
+          }
+          updateSession(sessionKey, { [field]: input });
+        }
+        // Volver a la confirmación con los datos actualizados.
+        const s = getSession(sessionKey);
+        updateSession(sessionKey, { state: STATES.AWAIT_CONFIRM, editingField: null });
+        return withButtons(
+          MSG.CONFIRM_TICKET(s.serviceName, s.subcategoryName, s.sku, s.customerName, s.customerEmail, s.numeroMovil, s.description),
+          [BTN_CONFIRM, BTN_MODIFY, BTN_CANCEL]
+        );
       }
 
       case STATES.AWAIT_ATTACHMENT: {
