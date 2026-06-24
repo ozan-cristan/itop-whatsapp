@@ -76,6 +76,58 @@ const STATUS_EMOJI = {
   dispatched: '🟡', escalated_tto: '🔴', escalated_ttr: '🔴', frozen: '❄️',
 };
 
+// ─── Helper: listado paginado de tickets ──────────────────────────────────────
+// WhatsApp limita las listas interactivas a 10 filas. Si hay más de 10 tickets,
+// se muestran de a 9 con una fila "Ver más" que avanza de página (cicla al final).
+// Hasta 10 tickets se muestran todos. La opción de cancelar va en el cuerpo del
+// mensaje (escribir "cancelar") para no gastar una fila.
+const TICKET_PAGE_SIZE = 9;
+
+function buildTicketList(headerBase, tickets, page = 0) {
+  const total = tickets.length;
+
+  // 1 a 3 tickets: botones inline directos (única forma en WhatsApp de mostrar
+  // las opciones sin el toque extra en "Seleccionar"; el límite es 3 botones).
+  // El cuerpo lista ref + título para dar contexto de cada botón.
+  if (total <= 3) {
+    const buttons = tickets.map((t, i) => ({
+      id: `sel_${i}`,
+      label: `${STATUS_EMOJI[t.status] || '⚪'} ${t.ref}`.slice(0, 20),
+    }));
+    const detail = tickets.map((t) => {
+      const emoji = STATUS_EMOJI[t.status] || '⚪';
+      return `${emoji} *${t.ref}* — ${t.title.slice(0, 60)}`;
+    }).join('\n');
+    const body = `${headerBase}\n\n${detail}\n\n_Tocá un botón para abrir, o escribí *cancelar* para volver al menú._`;
+    return withButtons(body, buttons);
+  }
+
+  // 4 o más: lista seleccionable nativa de WhatsApp. Hasta 10 en una sola
+  // página; si supera 10 se pagina de a 9 con una fila "Ver más". (WhatsApp
+  // colapsa la lista tras "Seleccionar"; no es posible mostrarla expandida.)
+  const needsPaging = total > 10;
+  const size = needsPaging ? TICKET_PAGE_SIZE : 10;
+  const pages = Math.ceil(total / size) || 1;
+  const safePage = ((page % pages) + pages) % pages;
+  const start = safePage * size;
+  const slice = tickets.slice(start, start + size);
+
+  const rows = slice.map((t, i) => {
+    const emoji = STATUS_EMOJI[t.status] || '⚪';
+    return {
+      id: `sel_${start + i}`,
+      title: `${emoji} ${t.ref}`.slice(0, 24),
+      description: t.title.slice(0, 72),
+    };
+  });
+  if (needsPaging) rows.push({ id: 'ver_mas', title: '➕ Ver más solicitudes' });
+
+  let header = headerBase;
+  if (needsPaging) header += ` (página ${safePage + 1} de ${pages})`;
+  header += '\n\n_Escribí *cancelar* para volver al menú._';
+  return withList(header, rows, 'Seleccionar');
+}
+
 // ─── Mensajes ─────────────────────────────────────────────────────────────────
 
 const MSG = {
@@ -107,6 +159,11 @@ const MSG = {
   MOBILE_INVALID_15: withCancel(
     '⚠️ *No incluyas el 15* del celular.\n\n' +
     'Ejemplo correcto: `341 781-3171`\n(no `0341 15-781-3171`)\n\n' +
+    '_Volvé a ingresarlo, o escribí *cancelar* para volver al menú._'
+  ),
+  EMAIL_INVALID: withCancel(
+    '⚠️ El *correo electrónico* no tiene un formato válido.\n\n' +
+    'Ejemplo correcto: `nombre@dominio.com`\n\n' +
     '_Volvé a ingresarlo, o escribí *cancelar* para volver al menú._'
   ),
 
@@ -146,31 +203,9 @@ const MSG = {
     [{ id: 'no', label: '✔️ Terminar' }]
   ),
 
-  SHOW_TICKETS: (tickets) => {
-    const rows = tickets.map((t, i) => {
-      const emoji = STATUS_EMOJI[t.status] || '⚪';
-      return {
-        id: `sel_${i}`,
-        title: `${emoji} ${t.ref}`.slice(0, 24),
-        description: t.title.slice(0, 72),
-      };
-    });
-    rows.push(CANCEL_ROW);
-    return withList('📋 Tus solicitudes activas:', rows, 'Seleccionar');
-  },
+  SHOW_TICKETS: (tickets, page = 0) => buildTicketList('📋 Tus solicitudes activas:', tickets, page),
 
-  SHOW_RESOLVED_TICKETS: (tickets) => {
-    const rows = tickets.map((t, i) => {
-      const emoji = STATUS_EMOJI[t.status] || '⚪';
-      return {
-        id: `sel_${i}`,
-        title: `${emoji} ${t.ref}`.slice(0, 24),
-        description: t.title.slice(0, 72),
-      };
-    });
-    rows.push(CANCEL_ROW);
-    return withList('📁 Tus requerimientos resueltos:', rows, 'Seleccionar');
-  },
+  SHOW_RESOLVED_TICKETS: (tickets, page = 0) => buildTicketList('📁 Tus requerimientos resueltos:', tickets, page),
 
   TICKET_DETAIL: (d) => {
     const status = STATUS_LABELS[d.status] || d.status;
@@ -211,6 +246,13 @@ function validateMobile(input) {
   if (digits.startsWith('0')) return MSG.MOBILE_INVALID_0;
   // Detectar 15 incluido en el número (ej. 34115781371 → debe ser 3417813171)
   if (/^\d{2,4}15\d{6,8}$/.test(digits)) return MSG.MOBILE_INVALID_15;
+  return null;
+}
+
+// ─── Helper: validar email ─────────────────────────────────────────────────────
+// Retorna el mensaje de error si el formato es inválido, o null si es válido.
+function validateEmail(input) {
+  if (!/^\S+@\S+\.\S+$/.test(input.trim())) return MSG.EMAIL_INVALID;
   return null;
 }
 
@@ -314,14 +356,14 @@ async function handleMessage(sessionKey, text, attachment = null) {
         if (input === 'seguimiento') {
           const tickets = await getTicketsForPerson(session.person.id);
           if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés solicitudes activas.\n\n¿Qué querés hacer?');
-          updateSession(sessionKey, { state: STATES.TICKET_LIST, tickets, ticketListType: 'active' });
-          return MSG.SHOW_TICKETS(tickets);
+          updateSession(sessionKey, { state: STATES.TICKET_LIST, tickets, ticketListType: 'active', ticketPage: 0 });
+          return MSG.SHOW_TICKETS(tickets, 0);
         }
         if (input === 'cerrados') {
           const tickets = await getResolvedTicketsForPerson(session.person.id);
           if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés requerimientos resueltos.\n\n¿Qué querés hacer?');
-          updateSession(sessionKey, { state: STATES.CLOSED_TICKET_LIST, tickets, ticketListType: 'resolved' });
-          return MSG.SHOW_RESOLVED_TICKETS(tickets);
+          updateSession(sessionKey, { state: STATES.CLOSED_TICKET_LIST, tickets, ticketListType: 'resolved', ticketPage: 0 });
+          return MSG.SHOW_RESOLVED_TICKETS(tickets, 0);
         }
         if (input === 'garantia') {
           const menu = await buildMainMenu(sessionKey, '¿Qué más necesitás?');
@@ -348,8 +390,13 @@ async function handleMessage(sessionKey, text, attachment = null) {
       }
 
       case STATES.TICKET_LIST: {
+        if (input === 'ver_mas') {
+          const page = (session.ticketPage || 0) + 1;
+          updateSession(sessionKey, { ticketPage: page });
+          return MSG.SHOW_TICKETS(session.tickets, page);
+        }
         const idx = parseSelectionIndex(input);
-        if (idx < 0 || idx >= session.tickets.length) return MSG.SHOW_TICKETS(session.tickets);
+        if (idx < 0 || idx >= session.tickets.length) return MSG.SHOW_TICKETS(session.tickets, session.ticketPage || 0);
         const ticket = session.tickets[idx];
         const detail = await getTicketDetail(ticket.id);
         updateSession(sessionKey, { state: STATES.TICKET_DETAIL_MENU, viewedTicketId: ticket.id, viewedTicketRef: ticket.ref });
@@ -357,8 +404,13 @@ async function handleMessage(sessionKey, text, attachment = null) {
       }
 
       case STATES.CLOSED_TICKET_LIST: {
+        if (input === 'ver_mas') {
+          const page = (session.ticketPage || 0) + 1;
+          updateSession(sessionKey, { ticketPage: page });
+          return MSG.SHOW_RESOLVED_TICKETS(session.tickets, page);
+        }
         const idx = parseSelectionIndex(input);
-        if (idx < 0 || idx >= session.tickets.length) return MSG.SHOW_RESOLVED_TICKETS(session.tickets);
+        if (idx < 0 || idx >= session.tickets.length) return MSG.SHOW_RESOLVED_TICKETS(session.tickets, session.ticketPage || 0);
         const ticket = session.tickets[idx];
         const detail = await getTicketDetail(ticket.id);
         updateSession(sessionKey, { state: STATES.TICKET_DETAIL_MENU, viewedTicketId: ticket.id, viewedTicketRef: ticket.ref });
@@ -371,13 +423,13 @@ async function handleMessage(sessionKey, text, attachment = null) {
           if (session.ticketListType === 'resolved') {
             const tickets = await getResolvedTicketsForPerson(session.person.id);
             if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés requerimientos resueltos.\n\n¿Qué querés hacer?');
-            updateSession(sessionKey, { state: STATES.CLOSED_TICKET_LIST, tickets });
-            return MSG.SHOW_RESOLVED_TICKETS(tickets);
+            updateSession(sessionKey, { state: STATES.CLOSED_TICKET_LIST, tickets, ticketPage: 0 });
+            return MSG.SHOW_RESOLVED_TICKETS(tickets, 0);
           }
           const tickets = await getTicketsForPerson(session.person.id);
           if (tickets.length === 0) return buildMainMenu(sessionKey, '📭 No tenés solicitudes activas.\n\n¿Qué querés hacer?');
-          updateSession(sessionKey, { state: STATES.TICKET_LIST, tickets });
-          return MSG.SHOW_TICKETS(tickets);
+          updateSession(sessionKey, { state: STATES.TICKET_LIST, tickets, ticketPage: 0 });
+          return MSG.SHOW_TICKETS(tickets, 0);
         }
         if (input === '3') {
           updateSession(sessionKey, { state: STATES.AWAIT_COMMENT });
@@ -420,6 +472,8 @@ async function handleMessage(sessionKey, text, attachment = null) {
 
       case STATES.AWAIT_CUSTOMER_EMAIL: {
         if (!input) return MSG.ASK_CUSTOMER_EMAIL;
+        const emailError = validateEmail(input);
+        if (emailError) return emailError;
         updateSession(sessionKey, { state: STATES.AWAIT_MOBILE, customerEmail: input });
         return MSG.ASK_MOBILE;
       }
@@ -476,6 +530,10 @@ async function handleMessage(sessionKey, text, attachment = null) {
           if (field === 'numeroMovil') {
             const mobileError = validateMobile(input);
             if (mobileError) return mobileError;
+          }
+          if (field === 'customerEmail') {
+            const emailError = validateEmail(input);
+            if (emailError) return emailError;
           }
           updateSession(sessionKey, { [field]: input });
         }

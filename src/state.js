@@ -44,6 +44,7 @@ const BASE_SESSION = {
   templateValues: {},
   tickets: [],
   ticketListType: 'active',
+  ticketPage: 0,
   sku: null,
   customerName: null,
   customerEmail: null,
