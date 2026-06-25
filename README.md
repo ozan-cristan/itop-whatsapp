@@ -2,7 +2,7 @@
 
 Bot de WhatsApp para el sistema **iTop ITSM** que permite a los usuarios crear y gestionar tickets de soporte directamente desde WhatsApp, usando la **API oficial de WhatsApp Business de Meta**.
 
-> Implementación activa con la **API oficial de Meta** (webhook + Graph API): `src/bot.js` (`npm start`). El archivo `bot_baileys.js` conserva la implementación anterior con **Baileys** (WhatsApp Web no oficial); ambas comparten el mismo núcleo (`flow.js` / `itop.js` / `state.js`).
+> Implementación con la **API oficial de Meta** (webhook + Graph API): `src/bot.js` (`npm start`). El núcleo conversacional está en `flow.js` / `itop.js` / `state.js`.
 
 ---
 
@@ -135,17 +135,3 @@ Usuario escribe → bot pide CUIT → valida en iTop → muestra menú
   • 📄 Políticas de garantía
   • 👋 Salir
 ```
-
----
-
-## Diferencias respecto a la versión Baileys
-
-| Aspecto | Baileys (`bot_baileys.js`) | Meta API (`src/`, activa) |
-|---|---|---|
-| Autenticación | QR code | Token permanente |
-| Mensajes entrantes | Evento en tiempo real | Webhook HTTP |
-| Adjuntos | Descarga directa | URL temporal de Meta |
-| Botones | `buttonsResponseMessage` | Interactive messages |
-| Identificador usuario | JID / LID | Número de teléfono |
-| Requiere número real | No (usa tu WhatsApp) | Sí (número Business) |
-| Oficial | No | Sí |
