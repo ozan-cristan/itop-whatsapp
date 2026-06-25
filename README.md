@@ -12,6 +12,7 @@ Bot de WhatsApp para el sistema **iTop ITSM** que permite a los usuarios crear y
 - 📋 Consultar solicitudes activas y resueltas
 - 📎 Adjuntar archivos (imágenes, documentos, audio, video)
 - 💬 Agregar comentarios a tickets existentes
+- 🔔 Notificaciones de iTop → WhatsApp (ticket resuelto / actualización de bitácora, con imágenes) vía `POST /itop-notify`
 - ⏱️ Sesiones con TTL de 15 minutos
 - 🔘 Botones interactivos de WhatsApp (hasta 3 por mensaje)
 - 🇦🇷 Interfaz en español
@@ -55,16 +56,31 @@ PORT=3000
 
 # iTop REST API
 ITOP_URL=https://tu-itop.ejemplo.com
+ITOP_USER=api_user
 ITOP_TOKEN=tu_application_token_de_itop
+
+# Secreto para autenticar las notificaciones entrantes de iTop (POST /itop-notify). Vacío = sin validación.
+ITOP_WEBHOOK_SECRET=
+
+# URL del documento de políticas de garantía (opción del menú). Vacío = opción no disponible.
+GARANTIA_URL=
 ```
+
+> El listado completo y comentado está en [`.env.example`](.env.example) — copialo con `cp .env.example .env`.
 
 ### Obtener las credenciales de Meta
 
 1. Crear app en [Meta Developers](https://developers.facebook.com) → tipo **Business**
 2. Agregar producto **WhatsApp**
-3. En **WhatsApp → API Setup**: copiar `Phone Number ID` y generar `Access Token`
-4. Registrar el webhook con la URL de tu servidor y el `VERIFY_TOKEN`
-5. Suscribirse al campo `messages`
+3. En **WhatsApp → API Setup**: copiar `Phone Number ID` y generar `Access Token` (idealmente **permanente**, vía System User con permiso `whatsapp_business_messaging`)
+4. **Registrar el número en la Cloud API**: en *API Setup* registrar el número definiendo un **PIN de verificación en dos pasos** (6 dígitos). Sin este paso, los envíos fallan con `(#133010) Account not registered`.
+5. Registrar el webhook con la **URL pública HTTPS** de tu servidor (`https://TU-DOMINIO/webhook`) y el `VERIFY_TOKEN`
+6. Suscribirse al campo `messages`
+
+> **Herramientas de diagnóstico** (en la raíz del proyecto):
+> - `node diagnose.js` — valida token + número contra la Graph API y muestra el estado (`platform_type`, número asociado, etc.).
+> - `node diagnose.js <numero_destino>` — hace además una prueba de envío real (plantilla `hello_world`).
+> - `node register.js <PIN_6_DIGITOS>` — registra el número en la Cloud API (paso 4) si falta.
 
 ---
 
@@ -101,10 +117,12 @@ El servidor debe tener HTTPS habilitado (nginx + certbot recomendado).
 
 ```
 src/
-├── bot.js      # Servidor Express — webhook Meta
+├── bot.js      # Servidor Express — webhook Meta + envío Graph API + /itop-notify
 ├── flow.js     # Máquina de estados conversacional
 ├── itop.js     # Cliente REST API de iTop
 └── state.js    # Gestión de sesiones en memoria
+diagnose.js     # Diagnóstico de credenciales/registro Meta (raíz)
+register.js     # Registro del número en la Cloud API (raíz)
 ```
 
 ---
