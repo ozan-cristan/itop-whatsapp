@@ -36,6 +36,7 @@ function checkRaw(name, val) {
   const PNID  = process.env.PHONE_NUMBER_ID;
   const VTOK  = process.env.VERIFY_TOKEN;
   const PORT  = process.env.PORT || 3000;
+  const RECIPIENT = process.argv[2]; // opcional: node diagnose.js <numero_destino> → prueba de envío
 
   console.log('1) Variables en .env:');
   const hasToken = checkRaw('WHATSAPP_TOKEN', TOKEN);
@@ -66,6 +67,15 @@ function checkRaw(name, val) {
       console.log(`     Verificación    : ${data.code_verification_status}`);
       console.log(`     Calidad         : ${data.quality_rating || 'n/d'}   Plataforma: ${data.platform_type || 'n/d'}`);
       console.log('     → Confirmá con el cliente que ESE es el número que esperaban asociar.');
+      if (data.platform_type === 'NOT_APPLICABLE') {
+        warn('platform_type = NOT_APPLICABLE → el número AÚN NO está registrado en la Cloud API.');
+        console.log('       Está verificado, pero falta el paso de REGISTRO para poder enviar/recibir por la API:');
+        console.log('       • Dashboard: WhatsApp → API Setup → seleccionar el número → registrarlo');
+        console.log('         (define un PIN de verificación en dos pasos de 6 dígitos).');
+        console.log(`       • O por API: POST ${GRAPH}/${PNID.trim()}/register`);
+        console.log('         body: {"messaging_product":"whatsapp","pin":"<PIN nuevo de 6 dígitos>"}');
+        console.log('       Confirmalo con la prueba de envío de abajo (node diagnose.js <numero_destino>).');
+      }
     } else {
       const e = data.error || {};
       bad(`La Graph API devolvió error (HTTP ${res.status}).`);
@@ -88,6 +98,42 @@ function checkRaw(name, val) {
   } catch (err) {
     bad('No se pudo contactar la Graph API: ' + err.message);
     console.log('     (¿el servidor tiene salida a internet / DNS hacia graph.facebook.com?)');
+  }
+
+  // 2b) Prueba de envío real (opcional): node diagnose.js <numero_destino>
+  if (RECIPIENT) {
+    console.log('\n2b) Prueba de envío (plantilla hello_world):');
+    const to = RECIPIENT.replace(/\D/g, '');
+    try {
+      const res = await fetch(`${GRAPH}/${PNID.trim()}/messages`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${TOKEN.trim()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp', to, type: 'template',
+          template: { name: 'hello_world', language: { code: 'en_US' } },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.messages?.[0]?.id) {
+        ok(`Envío aceptado por Meta (message id ${data.messages[0].id}). Revisá el WhatsApp ${to}.`);
+        console.log('     → Si llega: el número ESTÁ registrado y el envío funciona. El problema sería solo el webhook.');
+      } else {
+        const e = data.error || {};
+        bad(`Falló el envío (HTTP ${res.status}). code=${e.code} subcode=${e.error_subcode || '-'}: ${e.message}`);
+        if (e.code === 133010 || /not registered/i.test(e.message || '')) {
+          console.log('       → El número NO está registrado en la Cloud API (ver el paso de REGISTRO de arriba).');
+        } else if (e.code === 131030 || /recipient|allowed list|not in/i.test(e.message || '')) {
+          console.log('       → El destinatario no está en la lista de números de PRUEBA (app en modo desarrollo).');
+          console.log('         Agregá ese número en WhatsApp → API Setup → "To" → Manage phone number list.');
+        } else if (e.code === 132001 || /template/i.test(e.message || '')) {
+          console.log('       → La plantilla hello_world no existe en este idioma/cuenta (probá language es_AR/es).');
+        } else if (e.code === 190) {
+          console.log('       → Token inválido/expirado.');
+        }
+      }
+    } catch (err) {
+      bad('No se pudo enviar: ' + err.message);
+    }
   }
 
   // 3) Recordatorio del webhook (no se puede validar desde acá sin la URL pública)
