@@ -82,6 +82,17 @@ GARANTIA_URL=
 > - `node diagnose.js <numero_destino>` — hace además una prueba de envío real (plantilla `hello_world`).
 > - `node register.js <PIN_6_DIGITOS>` — registra el número en la Cloud API (paso 4) si falta.
 
+### Parámetros fijos (hardcodeados, no van en `.env`)
+
+Estos valores están fijos en el código; si alguna vez hay que cambiarlos se editan ahí (no hay variable de entorno):
+
+| Parámetro | Valor | Dónde |
+|-----------|-------|-------|
+| Versión de la Graph API de Meta | `v22.0` | `src/bot.js` (`META_MESSAGES_URL`, `META_MEDIA_URL` y descarga de medios) |
+| TTL de la sesión conversacional | 15 min | `src/state.js` → `SESSION_TTL_MS` |
+| Ventana para responder una notificación de iTop | 30 min | `src/state.js` → `REPLY_TTL_MS` |
+| Límite de tamaño de imagen saliente | 5 MB | `src/bot.js` → `WHATSAPP_MAX_IMAGE_BYTES` |
+
 ---
 
 ## Uso
