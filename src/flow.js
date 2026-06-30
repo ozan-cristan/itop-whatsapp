@@ -83,7 +83,8 @@ const STATUS_EMOJI = {
 // mensaje (escribir "cancelar") para no gastar una fila.
 const TICKET_PAGE_SIZE = 9;
 
-const SUBCATS_INVOICE_FLOW = ['Faltantes', 'Producto Incorrecto', 'Mercadería/Pack. Dañado', 'Mercadería/Packaging Dañado'];
+const SUBCATS_INVOICE_FLOW   = ['Faltantes', 'Producto Incorrecto', 'Mercadería/Pack. Dañado', 'Mercadería/Packaging Dañado'];
+const SUBCATS_INVOICE_NO_SKU = ['Pedido Incorrecto'];
 
 function buildTicketList(headerBase, tickets, page = 0) {
   const total = tickets.length;
@@ -194,20 +195,28 @@ const MSG = {
 
   ASK_FIELD_TO_EDIT: (session) => {
     const fmt = (v) => (v ? String(v).slice(0, 40) : '—');
-    const rows = session.invoiceFlow
-      ? [
-          { id: 'edit_sku',         title: '🏷️ SKU',          description: fmt(session.sku) },
-          { id: 'edit_description', title: '🧾 N° Factura',    description: fmt(session.description) },
-          CANCEL_ROW,
-        ]
-      : [
-          { id: 'edit_sku',         title: '🏷️ SKU',          description: fmt(session.sku) },
-          { id: 'edit_name',        title: '👤 Nombre',        description: fmt(session.customerName) },
-          { id: 'edit_email',       title: '📧 Email',         description: fmt(session.customerEmail) },
-          { id: 'edit_mobile',      title: '📱 Móvil',         description: fmt(session.numeroMovil) },
-          { id: 'edit_description', title: '📄 Descripción',   description: fmt(session.description) },
-          CANCEL_ROW,
-        ];
+    let rows;
+    if (!session.invoiceFlow) {
+      rows = [
+        { id: 'edit_sku',         title: '🏷️ SKU',          description: fmt(session.sku) },
+        { id: 'edit_name',        title: '👤 Nombre',        description: fmt(session.customerName) },
+        { id: 'edit_email',       title: '📧 Email',         description: fmt(session.customerEmail) },
+        { id: 'edit_mobile',      title: '📱 Móvil',         description: fmt(session.numeroMovil) },
+        { id: 'edit_description', title: '📄 Descripción',   description: fmt(session.description) },
+        CANCEL_ROW,
+      ];
+    } else if (SUBCATS_INVOICE_NO_SKU.includes(session.subcategoryName)) {
+      rows = [
+        { id: 'edit_description', title: '🧾 N° Factura',    description: fmt(session.description) },
+        CANCEL_ROW,
+      ];
+    } else {
+      rows = [
+        { id: 'edit_sku',         title: '🏷️ SKU',          description: fmt(session.sku) },
+        { id: 'edit_description', title: '🧾 N° Factura',    description: fmt(session.description) },
+        CANCEL_ROW,
+      ];
+    }
     return withList('✏️ ¿Qué dato querés modificar?', rows, 'Elegir campo');
   },
 
@@ -276,13 +285,14 @@ function validateEmail(input) {
 // ─── Helper: ir al paso de SKU ────────────────────────────────────────────────
 
 function goToSku(sessionKey, serviceId, serviceName, subcategoryId, subcategoryName) {
-  const invoiceFlow = SUBCATS_INVOICE_FLOW.includes(subcategoryName);
-  updateSession(sessionKey, {
-    serviceId, serviceName, subcategoryId, subcategoryName, invoiceFlow,
-    state: STATES.AWAIT_SKU,
-    sku: null, customerName: null, customerEmail: null, numeroMovil: null,
-    title: null, description: null,
-  });
+  const invoiceFlow = SUBCATS_INVOICE_FLOW.includes(subcategoryName) || SUBCATS_INVOICE_NO_SKU.includes(subcategoryName);
+  const base = { serviceId, serviceName, subcategoryId, subcategoryName, invoiceFlow,
+    sku: null, customerName: null, customerEmail: null, numeroMovil: null, title: null, description: null };
+  if (SUBCATS_INVOICE_NO_SKU.includes(subcategoryName)) {
+    updateSession(sessionKey, { ...base, state: STATES.AWAIT_DESC });
+    return MSG.ASK_INVOICE;
+  }
+  updateSession(sessionKey, { ...base, state: STATES.AWAIT_SKU });
   return MSG.ASK_SKU;
 }
 
