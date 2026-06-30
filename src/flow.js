@@ -83,8 +83,8 @@ const STATUS_EMOJI = {
 // mensaje (escribir "cancelar") para no gastar una fila.
 const TICKET_PAGE_SIZE = 9;
 
-const SUBCATS_INVOICE_FLOW   = ['Faltantes', 'Producto Incorrecto', 'Mercadería/Pack. Dañado', 'Mercadería/Packaging Dañado'];
-const SUBCATS_INVOICE_NO_SKU = ['Pedido Incorrecto'];
+const SUBCATS_INVOICE_FLOW   = ['faltantes', 'producto incorrecto', 'mercadería/pack. dañado', 'mercadería/packaging dañado'];
+const SUBCATS_INVOICE_NO_SKU = ['pedido incorrecto'];
 
 function buildTicketList(headerBase, tickets, page = 0) {
   const total = tickets.length;
@@ -205,7 +205,7 @@ const MSG = {
         { id: 'edit_description', title: '📄 Descripción',   description: fmt(session.description) },
         CANCEL_ROW,
       ];
-    } else if (SUBCATS_INVOICE_NO_SKU.includes(session.subcategoryName)) {
+    } else if (SUBCATS_INVOICE_NO_SKU.includes(session.subcategoryName.toLowerCase())) {
       rows = [
         { id: 'edit_description', title: '🧾 N° Factura',    description: fmt(session.description) },
         CANCEL_ROW,
@@ -285,10 +285,11 @@ function validateEmail(input) {
 // ─── Helper: ir al paso de SKU ────────────────────────────────────────────────
 
 function goToSku(sessionKey, serviceId, serviceName, subcategoryId, subcategoryName) {
-  const invoiceFlow = SUBCATS_INVOICE_FLOW.includes(subcategoryName) || SUBCATS_INVOICE_NO_SKU.includes(subcategoryName);
+  const nameLC = subcategoryName.toLowerCase();
+  const invoiceFlow = SUBCATS_INVOICE_FLOW.includes(nameLC) || SUBCATS_INVOICE_NO_SKU.includes(nameLC);
   const base = { serviceId, serviceName, subcategoryId, subcategoryName, invoiceFlow,
     sku: null, customerName: null, customerEmail: null, numeroMovil: null, title: null, description: null };
-  if (SUBCATS_INVOICE_NO_SKU.includes(subcategoryName)) {
+  if (SUBCATS_INVOICE_NO_SKU.includes(nameLC)) {
     updateSession(sessionKey, { ...base, state: STATES.AWAIT_DESC });
     return MSG.ASK_INVOICE;
   }
