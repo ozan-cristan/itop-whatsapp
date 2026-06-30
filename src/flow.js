@@ -44,7 +44,7 @@ async function buildMainMenu(sessionKey, headerText) {
   updateSession(sessionKey, { state: STATES.MAIN_MENU, services });
 
   const SERVICE_EMOJI = {
-    'incidencias en recepción': '📦',
+    'incidente en recepción': '📦',
     'servicio técnico': '🔧',
   };
   const rows = [
