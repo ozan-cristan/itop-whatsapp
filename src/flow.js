@@ -43,8 +43,16 @@ async function buildMainMenu(sessionKey, headerText) {
   const services = await getServicesForOrg(session.person.org_id);
   updateSession(sessionKey, { state: STATES.MAIN_MENU, services });
 
+  const SERVICE_EMOJI = {
+    'incidencias en recepción': '📦',
+    'servicio técnico': '🔧',
+  };
   const rows = [
-    ...services.map((s, i) => ({ id: `sel_${i}`, title: s.name.slice(0, 24) })),
+    ...services.map((s, i) => {
+      const emoji = SERVICE_EMOJI[s.name.toLowerCase()] || '';
+      const title = emoji ? `${emoji} ${s.name}`.slice(0, 24) : s.name.slice(0, 24);
+      return { id: `sel_${i}`, title };
+    }),
     { id: 'seguimiento', title: '📋 Seguimiento' },
     { id: 'cerrados',    title: '📁 Resueltos' },
     { id: 'garantia',    title: '📄 Políticas de garantía' },
