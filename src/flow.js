@@ -83,6 +83,8 @@ const STATUS_EMOJI = {
 // mensaje (escribir "cancelar") para no gastar una fila.
 const TICKET_PAGE_SIZE = 9;
 
+const SUBCATS_INVOICE_FLOW = ['Faltantes', 'Producto Incorrecto', 'Mercadería/Pack. Dañado', 'Mercadería/Packaging Dañado'];
+
 function buildTicketList(headerBase, tickets, page = 0) {
   const total = tickets.length;
 
@@ -146,6 +148,7 @@ const MSG = {
   ),
 
   ASK_SKU:            withCancel('🏷️ Ingresá el *SKU o Código del Producto con Problemas* (si aplica):\n\n_Escribí *omitir* si no corresponde._\n_Escribí *cancelar* para volver al menú._'),
+  ASK_INVOICE:        withCancel('🧾 *Paso 1 de 1* — Ingresá el *N° de factura* del problema:\n\n_Escribí *cancelar* para volver al menú._'),
   ASK_CUSTOMER_NAME:  withCancel('👤 *Paso 1 de 4* — Ingresá el *nombre y apellido del consumidor final*:\n\n_Escribí *cancelar* para volver al menú._'),
   ASK_CUSTOMER_EMAIL: withCancel('📧 *Paso 2 de 4* — Ingresá el *correo electrónico* del cliente:\n\n_Escribí *cancelar* para volver al menú._'),
   ASK_MOBILE:         withCancel('📱 *Paso 3 de 4* — Ingresá el *número móvil* del cliente:\n\n⚠️ Sin el *0* de área y sin el *15*.\nEjemplo: `341 781-3171`\n(no `0341 15-781-3171`)\n\n_Escribí *cancelar* para volver al menú._'),
@@ -179,18 +182,32 @@ const MSG = {
     msg += `¿Confirmás la creación?`;
     return msg;
   },
+  CONFIRM_TICKET_INVOICE: (subcatName, sku, invoice) => {
+    let msg = `📋 *Resumen de tu solicitud*\n\n`;
+    msg += `📂 Subcategoría: ${subcatName}\n`;
+    if (sku) msg += `🏷️ SKU: ${sku}\n`;
+    msg += `🧾 N° de factura: ${invoice}\n\n`;
+    msg += `¿Confirmás la creación?`;
+    return msg;
+  },
   INVALID_CONFIRM: '⚠️ Respondé *1* para confirmar o *2* para modificar datos.',
 
   ASK_FIELD_TO_EDIT: (session) => {
     const fmt = (v) => (v ? String(v).slice(0, 40) : '—');
-    const rows = [
-      { id: 'edit_sku',         title: '🏷️ SKU',          description: fmt(session.sku) },
-      { id: 'edit_name',        title: '👤 Nombre',        description: fmt(session.customerName) },
-      { id: 'edit_email',       title: '📧 Email',         description: fmt(session.customerEmail) },
-      { id: 'edit_mobile',      title: '📱 Móvil',         description: fmt(session.numeroMovil) },
-      { id: 'edit_description', title: '📄 Descripción',   description: fmt(session.description) },
-      CANCEL_ROW,
-    ];
+    const rows = session.invoiceFlow
+      ? [
+          { id: 'edit_sku',         title: '🏷️ SKU',          description: fmt(session.sku) },
+          { id: 'edit_description', title: '🧾 N° Factura',    description: fmt(session.description) },
+          CANCEL_ROW,
+        ]
+      : [
+          { id: 'edit_sku',         title: '🏷️ SKU',          description: fmt(session.sku) },
+          { id: 'edit_name',        title: '👤 Nombre',        description: fmt(session.customerName) },
+          { id: 'edit_email',       title: '📧 Email',         description: fmt(session.customerEmail) },
+          { id: 'edit_mobile',      title: '📱 Móvil',         description: fmt(session.numeroMovil) },
+          { id: 'edit_description', title: '📄 Descripción',   description: fmt(session.description) },
+          CANCEL_ROW,
+        ];
     return withList('✏️ ¿Qué dato querés modificar?', rows, 'Elegir campo');
   },
 
@@ -259,8 +276,9 @@ function validateEmail(input) {
 // ─── Helper: ir al paso de SKU ────────────────────────────────────────────────
 
 function goToSku(sessionKey, serviceId, serviceName, subcategoryId, subcategoryName) {
+  const invoiceFlow = SUBCATS_INVOICE_FLOW.includes(subcategoryName);
   updateSession(sessionKey, {
-    serviceId, serviceName, subcategoryId, subcategoryName,
+    serviceId, serviceName, subcategoryId, subcategoryName, invoiceFlow,
     state: STATES.AWAIT_SKU,
     sku: null, customerName: null, customerEmail: null, numeroMovil: null,
     title: null, description: null,
@@ -460,6 +478,10 @@ async function handleMessage(sessionKey, text, attachment = null) {
 
       case STATES.AWAIT_SKU: {
         const skuValue = ['omitir', 'skip', 'no'].includes(input.toLowerCase()) ? null : input || null;
+        if (session.invoiceFlow) {
+          updateSession(sessionKey, { state: STATES.AWAIT_DESC, sku: skuValue });
+          return MSG.ASK_INVOICE;
+        }
         updateSession(sessionKey, { state: STATES.AWAIT_CUSTOMER_NAME, sku: skuValue });
         return MSG.ASK_CUSTOMER_NAME;
       }
@@ -487,6 +509,11 @@ async function handleMessage(sessionKey, text, attachment = null) {
       }
 
       case STATES.AWAIT_DESC: {
+        if (session.invoiceFlow) {
+          if (!input) return MSG.ASK_INVOICE;
+          updateSession(sessionKey, { state: STATES.AWAIT_CONFIRM, description: input });
+          return withButtons(MSG.CONFIRM_TICKET_INVOICE(session.subcategoryName, session.sku, input), [BTN_CONFIRM, BTN_MODIFY, BTN_CANCEL]);
+        }
         if (!input) return withCancel(MSG.ASK_DESC);
         const { serviceName, subcategoryName, sku, customerName, customerEmail, numeroMovil } = session;
         updateSession(sessionKey, { state: STATES.AWAIT_CONFIRM, description: input });
@@ -495,9 +522,9 @@ async function handleMessage(sessionKey, text, attachment = null) {
 
       case STATES.AWAIT_CONFIRM: {
         if (['1', 'si', 'sí', 'yes'].includes(input.toLowerCase())) {
-          const { person, serviceId, subcategoryId, customerName, customerEmail, numeroMovil, description, sku } = session;
-          const title = `${customerName} | ${customerEmail}`;
-          const ticket = await createUserRequest(person, serviceId, subcategoryId, title, description, null, sku, numeroMovil);
+          const { person, serviceId, subcategoryId, customerName, customerEmail, numeroMovil, description, sku, invoiceFlow, subcategoryName } = session;
+          const title = invoiceFlow ? subcategoryName : `${customerName} | ${customerEmail}`;
+          const ticket = await createUserRequest(person, serviceId, subcategoryId, title, description, null, sku, invoiceFlow ? null : numeroMovil);
           updateSession(sessionKey, { state: STATES.AWAIT_ATTACHMENT, ticketId: ticket.id, ticketRef: ticket.ref });
           return MSG.ASK_ATTACHMENT(ticket.ref);
         }
@@ -512,6 +539,7 @@ async function handleMessage(sessionKey, text, attachment = null) {
         const meta = EDITABLE_FIELDS[input];
         if (!meta) return MSG.ASK_FIELD_TO_EDIT(session);
         updateSession(sessionKey, { state: STATES.EDIT_FIELD_VALUE, editingField: meta.field });
+        if (meta.field === 'description' && session.invoiceFlow) return MSG.ASK_INVOICE;
         return meta.ask();
       }
 
@@ -524,6 +552,7 @@ async function handleMessage(sessionKey, text, attachment = null) {
         } else {
           if (!input) {
             // Re-pedir el mismo campo si llega vacío.
+            if (field === 'description' && session.invoiceFlow) return MSG.ASK_INVOICE;
             const entry = Object.values(EDITABLE_FIELDS).find((m) => m.field === field);
             return entry ? entry.ask() : MSG.ASK_FIELD_TO_EDIT(session);
           }
@@ -540,10 +569,10 @@ async function handleMessage(sessionKey, text, attachment = null) {
         // Volver a la confirmación con los datos actualizados.
         const s = getSession(sessionKey);
         updateSession(sessionKey, { state: STATES.AWAIT_CONFIRM, editingField: null });
-        return withButtons(
-          MSG.CONFIRM_TICKET(s.serviceName, s.subcategoryName, s.sku, s.customerName, s.customerEmail, s.numeroMovil, s.description),
-          [BTN_CONFIRM, BTN_MODIFY, BTN_CANCEL]
-        );
+        const confirmMsg = s.invoiceFlow
+          ? MSG.CONFIRM_TICKET_INVOICE(s.subcategoryName, s.sku, s.description)
+          : MSG.CONFIRM_TICKET(s.serviceName, s.subcategoryName, s.sku, s.customerName, s.customerEmail, s.numeroMovil, s.description);
+        return withButtons(confirmMsg, [BTN_CONFIRM, BTN_MODIFY, BTN_CANCEL]);
       }
 
       case STATES.AWAIT_ATTACHMENT: {

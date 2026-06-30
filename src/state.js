@@ -51,6 +51,7 @@ const BASE_SESSION = {
   numeroMovil: null,
   title: null,
   description: null,
+  invoiceFlow: false,
   editingField: null,
   ticketId: null,
   ticketRef: null,
