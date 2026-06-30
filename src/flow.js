@@ -145,7 +145,7 @@ const MSG = {
     [...subcats.map((s, i) => ({ id: `sel_${i}`, title: s.name.slice(0, 24) })), CANCEL_ROW]
   ),
 
-  ASK_SKU:            withCancel('🏷️ Ingresá el *SKU o código del producto que figura en el packaging* (si aplica):\n\n_Escribí *omitir* si no corresponde._\n_Escribí *cancelar* para volver al menú._'),
+  ASK_SKU:            withCancel('🏷️ Ingresá el *SKU o Código del Producto con Problemas* (si aplica):\n\n_Escribí *omitir* si no corresponde._\n_Escribí *cancelar* para volver al menú._'),
   ASK_CUSTOMER_NAME:  withCancel('👤 *Paso 1 de 4* — Ingresá el *nombre y apellido del consumidor final*:\n\n_Escribí *cancelar* para volver al menú._'),
   ASK_CUSTOMER_EMAIL: withCancel('📧 *Paso 2 de 4* — Ingresá el *correo electrónico* del cliente:\n\n_Escribí *cancelar* para volver al menú._'),
   ASK_MOBILE:         withCancel('📱 *Paso 3 de 4* — Ingresá el *número móvil* del cliente:\n\n⚠️ Sin el *0* de área y sin el *15*.\nEjemplo: `341 781-3171`\n(no `0341 15-781-3171`)\n\n_Escribí *cancelar* para volver al menú._'),
