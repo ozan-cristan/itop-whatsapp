@@ -2,6 +2,13 @@
 <itop_design xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="3.0">
   <constants/>
   <classes>
+    <class id="Contact">
+      <fields>
+        <field id="name" xsi:type="AttributeString" _delta="must_exist">
+          <is_null_allowed>true</is_null_allowed>
+        </field>
+      </fields>
+    </class>
     <class id="Person">
 
       <properties>
